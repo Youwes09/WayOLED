@@ -1,0 +1,4 @@
+build/
+.direnv/
+result
+*.o
