@@ -9,6 +9,7 @@ wayoled_sources = files(
   'wayland/idle_notify.c',
   'wayland/screencopy.c',
   'wayland/layer_shell_overlay.c',
+  'wayland/refresh_cycle.c',
   'drm/kms_pan.c',
   'drm/gamma_lut.c',
   'ipc/ipc_server.c',
