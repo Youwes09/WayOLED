@@ -1,11 +1,13 @@
 #include "ipc_commands.h"
 #include "../core/profile.h"
+#include "../core/config.h"
 #include "../wayland/refresh_cycle.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/wait.h>
 
 static long percent_to_raw(const backlight_dev_t *dev, long percent) {
@@ -112,7 +114,24 @@ static void cmd_brightness(wayoled_state_t *st, const char *args, char *resp, si
 }
 
 static void cmd_refresh(wayoled_state_t *st, const char *args, char *resp, size_t max) {
-    (void)args;
+    if (strcmp(args, "stop") == 0) {
+        if (!st->refresh_in_progress) {
+            snprintf(resp, max, "err not running\n");
+            return;
+        }
+        if (kill(st->refresh_pid, SIGTERM) != 0) {
+            snprintf(resp, max, "err failed to signal refresh process\n");
+            return;
+        }
+        snprintf(resp, max, "ok stopping\n");
+        return;
+    }
+
+    if (args[0] != '\0') {
+        snprintf(resp, max, "err usage: refresh|refresh stop\n");
+        return;
+    }
+
     if (st->refresh_in_progress) {
         snprintf(resp, max, "err already running\n");
         return;
@@ -124,8 +143,10 @@ static void cmd_refresh(wayoled_state_t *st, const char *args, char *resp, size_
         return;
     }
 
-    if (pid == 0)
-        _exit(refresh_cycle_run() == 0 ? 0 : 1);
+    if (pid == 0) {
+        int rc = refresh_cycle_run();
+        _exit(rc == 0 ? 0 : (rc == 1 ? 2 : 1));
+    }
 
     st->refresh_pid = pid;
     st->refresh_in_progress = 1;
@@ -153,6 +174,47 @@ static void cmd_auto(wayoled_state_t *st, const char *args, char *resp, size_t m
     snprintf(resp, max, "ok pinned=0\n");
 }
 
+static void cmd_profiles(wayoled_state_t *st, const char *args, char *resp, size_t max) {
+    (void)st;
+    (void)args;
+
+    char names[CONFIG_LIST_MAX][CONFIG_PROFILE_NAME_MAX];
+    int count = config_list_profiles(names);
+
+    size_t off = 0;
+    for (int i = 0; i < count && off < max; i++) {
+        int n = snprintf(resp + off, max - off, "%s\n", names[i]);
+        if (n < 0 || (size_t)n >= max - off)
+            break;
+        off += (size_t)n;
+    }
+
+    if (count == 0)
+        snprintf(resp, max, "err no profiles found\n");
+}
+
+static const char *const HELP_TEXT =
+    "status                    show daemon state\n"
+    "dim                       force gamma dimming on\n"
+    "restore                   force gamma dimming off\n"
+    "pause                     suspend automatic static/idle dimming\n"
+    "resume                    resume automatic static/idle dimming\n"
+    "brightness get            report current/target backlight percentage\n"
+    "brightness set <0-100>    set target backlight percentage\n"
+    "brightness step <+-N>     adjust target backlight by N percent\n"
+    "refresh                   run the pixel-refresh sweep\n"
+    "refresh stop              cancel an in-progress pixel-refresh sweep\n"
+    "profile [name]            show or switch+pin the active profile\n"
+    "profiles                  list available profile names\n"
+    "auto                      unpin, hand control back to the scheduler\n"
+    "help                      show this text\n";
+
+static void cmd_help(wayoled_state_t *st, const char *args, char *resp, size_t max) {
+    (void)st;
+    (void)args;
+    snprintf(resp, max, "%s", HELP_TEXT);
+}
+
 typedef struct {
     const char *name;
     void (*fn)(wayoled_state_t *, const char *, char *, size_t);
@@ -167,7 +229,9 @@ static const ipc_cmd_entry_t commands[] = {
     { "brightness", cmd_brightness },
     { "refresh",    cmd_refresh },
     { "profile",    cmd_profile },
+    { "profiles",   cmd_profiles },
     { "auto",       cmd_auto },
+    { "help",       cmd_help },
 };
 
 void ipc_dispatch(wayoled_state_t *st, const char *cmd) {

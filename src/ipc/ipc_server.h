@@ -5,7 +5,7 @@
 
 #define IPC_SOCKET_PATH "/tmp/wayoled.sock"
 #define IPC_CMD_MAX 256
-#define IPC_RESP_MAX 512
+#define IPC_RESP_MAX 1024
 
 typedef struct {
     int listen_fd;

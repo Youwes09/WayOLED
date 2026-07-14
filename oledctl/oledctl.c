@@ -5,21 +5,8 @@
 #include <string.h>
 
 static void print_usage(const char *prog) {
-    fprintf(stderr,
-        "usage: %s <command> [args]\n"
-        "commands:\n"
-        "  status\n"
-        "  dim\n"
-        "  restore\n"
-        "  pause\n"
-        "  resume\n"
-        "  brightness get\n"
-        "  brightness set <0-100>\n"
-        "  brightness step <+-N>\n"
-        "  refresh\n"
-        "  profile [name]\n"
-        "  auto\n",
-        prog);
+    fprintf(stderr, "usage: %s <command> [args]\n", prog);
+    fprintf(stderr, "run '%s help' for the full command list\n", prog);
 }
 
 int main(int argc, char *argv[]) {

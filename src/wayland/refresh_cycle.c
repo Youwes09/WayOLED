@@ -13,9 +13,17 @@
 #include <fcntl.h>
 #include <time.h>
 #include <errno.h>
+#include <signal.h>
 
 #define SEC_PER_COLOR 3
 #define BAR_HEIGHT_PX 6
+
+static volatile sig_atomic_t g_stop_requested = 0;
+
+static void handle_sigterm(int signum) {
+    (void)signum;
+    g_stop_requested = 1;
+}
 
 typedef struct { uint8_t r, g, b; } rgb_t;
 
@@ -167,6 +175,10 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 };
 
 int refresh_cycle_run(void) {
+    struct sigaction sa = {0};
+    sa.sa_handler = handle_sigterm;
+    sigaction(SIGTERM, &sa, NULL);
+
     state_t st = {0};
     st.buf_fd = -1;
 
@@ -240,6 +252,15 @@ int refresh_cycle_run(void) {
                 fprintf(stderr, "wayoled: surface closed, aborting refresh\n");
                 destroy_shm_buffer(&st);
                 return -1;
+            }
+
+            if (g_stop_requested) {
+                fprintf(stderr, "wayoled: refresh cycle cancelled\n");
+                destroy_shm_buffer(&st);
+                zwlr_layer_surface_v1_destroy(st.layer_surface);
+                wl_surface_destroy(st.surface);
+                wl_display_disconnect(st.display);
+                return 1;
             }
         }
     }

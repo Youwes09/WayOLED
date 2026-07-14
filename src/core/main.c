@@ -69,10 +69,17 @@ static void reap_refresh(wayoled_state_t *st) {
 
     int status = 0;
     pid_t r = waitpid(st->refresh_pid, &status, WNOHANG);
-    if (r == st->refresh_pid) {
-        st->refresh_in_progress = 0;
+    if (r != st->refresh_pid)
+        return;
+
+    st->refresh_in_progress = 0;
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 2)
+        fprintf(stderr, "wayoled: refresh cycle cancelled\n");
+    else if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
         fprintf(stderr, "wayoled: refresh cycle finished\n");
-    }
+    else
+        fprintf(stderr, "wayoled: refresh cycle failed\n");
 }
 
 static void check_schedule(wayoled_state_t *st) {

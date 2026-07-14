@@ -1,7 +1,9 @@
+#define _GNU_SOURCE
 #include "ipc_server.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
@@ -28,6 +30,13 @@ int ipc_server_init(ipc_server_t *srv) {
         return -1;
     }
 
+    if (chmod(IPC_SOCKET_PATH, S_IRUSR | S_IWUSR) < 0) {
+        fprintf(stderr, "wayoled: chmod() on socket failed: %s\n", strerror(errno));
+        close(srv->listen_fd);
+        unlink(IPC_SOCKET_PATH);
+        return -1;
+    }
+
     if (listen(srv->listen_fd, 4) < 0) {
         fprintf(stderr, "wayoled: listen() failed: %s\n", strerror(errno));
         close(srv->listen_fd);
@@ -37,12 +46,28 @@ int ipc_server_init(ipc_server_t *srv) {
     return 0;
 }
 
+static int peer_uid_ok(int client_fd) {
+    struct ucred cred;
+    socklen_t len = sizeof(cred);
+
+    if (getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) < 0)
+        return 0;
+
+    return cred.uid == getuid();
+}
+
 int ipc_server_poll(ipc_server_t *srv, char *cmd_out, size_t cmd_max) {
     int client_fd = accept(srv->listen_fd, NULL, NULL);
     if (client_fd < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
         return -1;
+    }
+
+    if (!peer_uid_ok(client_fd)) {
+        fprintf(stderr, "wayoled: rejected IPC connection from foreign UID\n");
+        close(client_fd);
+        return 0;
     }
 
     struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
