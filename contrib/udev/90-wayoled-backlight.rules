@@ -1,0 +1,3 @@
+SUBSYSTEM=="backlight", KERNEL=="amdgpu_bl*", RUN+="/bin/chgrp video $sys$devpath/brightness", RUN+="/bin/chmod g+w $sys$devpath/brightness"
+SUBSYSTEM=="backlight", KERNEL=="intel_backlight", RUN+="/bin/chgrp video $sys$devpath/brightness", RUN+="/bin/chmod g+w $sys$devpath/brightness"
+SUBSYSTEM=="backlight", KERNEL=="acpi_video*", RUN+="/bin/chgrp video $sys$devpath/brightness", RUN+="/bin/chmod g+w $sys$devpath/brightness"

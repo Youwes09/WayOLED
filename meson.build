@@ -45,3 +45,6 @@ endforeach
 
 subdir('src')
 subdir('oledctl')
+executable('wayoled-brightness-helper',
+  files('contrib/wayoled-brightness-helper.c'),
+  install: true)

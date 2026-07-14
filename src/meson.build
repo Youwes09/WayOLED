@@ -2,6 +2,9 @@ wayoled_sources = files(
   'core/config.c',
   'core/main.c',
   'core/scheduler.c',
+  'core/dimmer.c',
+  'core/wayland_globals.c',
+  'core/profile.c',
   'backlight/backlight.c',
   'backlight/inotify_watch.c',
   'colortemp/colortemp.c',
@@ -13,6 +16,7 @@ wayoled_sources = files(
   'drm/kms_pan.c',
   'drm/gamma_lut.c',
   'ipc/ipc_server.c',
+  'ipc/ipc_commands.c',
 )
 
 wayoled_deps = [

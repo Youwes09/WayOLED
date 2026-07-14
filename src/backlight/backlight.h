@@ -7,7 +7,8 @@
 #define BACKLIGHT_PATH_MAX 256
 
 typedef struct {
-    char device_path[BACKLIGHT_PATH_MAX];   // Ex: /sys/class/backlight/amdgpu_bl0
+    char device_path[BACKLIGHT_PATH_MAX];
+    char device_name[64];
     char brightness_path[BACKLIGHT_PATH_MAX];
     char max_brightness_path[BACKLIGHT_PATH_MAX];
 
@@ -16,17 +17,13 @@ typedef struct {
     long target_brightness;
 
     int fd;
+    int writable;
 } backlight_dev_t;
 
-
 int backlight_detect(backlight_dev_t *dev);
-
 int backlight_read(backlight_dev_t *dev);
-
 int backlight_write(backlight_dev_t *dev, long value);
-
 int backlight_tick(backlight_dev_t *dev, double step_fraction);
-
 void backlight_close(backlight_dev_t *dev);
 
 #endif
