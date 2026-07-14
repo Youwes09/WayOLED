@@ -8,7 +8,6 @@ wayoled_sources = files(
   'backlight/backlight.c',
   'backlight/inotify_watch.c',
   'colortemp/colortemp.c',
-  'wayland/wl_client.c',
   'wayland/idle_notify.c',
   'wayland/screencopy.c',
   'wayland/layer_shell_overlay.c',

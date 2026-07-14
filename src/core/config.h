@@ -18,10 +18,6 @@ typedef struct {
 int config_load_profile(const char *name, wayoled_profile_t *out);
 void config_default_profile(wayoled_profile_t *out);
 
-// Enumerates profiles from ~/.config/wayoled/profiles/ and CONFIG_DIR,
-// de-duplicated by name with user profiles taking priority. Writes up to
-// CONFIG_LIST_MAX names into out_names (each up to CONFIG_PROFILE_NAME_MAX)
-// and returns the count.
 int config_list_profiles(char out_names[][CONFIG_PROFILE_NAME_MAX]);
 
 #endif

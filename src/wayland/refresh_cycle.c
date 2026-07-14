@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "refresh_cycle.h"
+#include "layer_shell_overlay.h"
 
 #include <wayland-client.h>
 #include "xdg-shell-client-protocol.h"
@@ -44,11 +45,7 @@ typedef struct {
     struct wl_shm *shm;
     struct zwlr_layer_shell_v1 *layer_shell;
 
-    struct wl_surface *surface;
-    struct zwlr_layer_surface_v1 *layer_surface;
-
-    int width, height;
-    int configured;
+    overlay_t overlay;
 
     struct wl_shm_pool *pool;
     struct wl_buffer *buffer;
@@ -85,7 +82,7 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 static int create_shm_buffer(state_t *st) {
-    st->buf_size = (size_t)st->width * st->height * 4;
+    st->buf_size = (size_t)st->overlay.width * st->overlay.height * 4;
 
     st->buf_fd = memfd_create("wayoled-refresh", MFD_CLOEXEC);
     if (st->buf_fd < 0) {
@@ -109,8 +106,8 @@ static int create_shm_buffer(state_t *st) {
 
     st->pool = wl_shm_create_pool(st->shm, st->buf_fd, (int32_t)st->buf_size);
     st->buffer = wl_shm_pool_create_buffer(st->pool, 0,
-                                            st->width, st->height,
-                                            st->width * 4,
+                                            st->overlay.width, st->overlay.height,
+                                            st->overlay.width * 4,
                                             WL_SHM_FORMAT_XRGB8888);
     return 0;
 }
@@ -124,6 +121,9 @@ static void destroy_shm_buffer(state_t *st) {
 }
 
 static void paint_frame(state_t *st, rgb_t color, double progress) {
+    int width = st->overlay.width;
+    int height = st->overlay.height;
+
     uint32_t pixel = ((uint32_t)color.r << 16) |
                       ((uint32_t)color.g << 8) |
                        (uint32_t)color.b;
@@ -132,47 +132,22 @@ static void paint_frame(state_t *st, rgb_t color, double progress) {
                           ((uint32_t)(255 - color.g) << 8) |
                            (uint32_t)(255 - color.b);
 
-    int bar_fill_px = (int)(st->width * progress);
+    int bar_fill_px = (int)(width * progress);
 
-    for (int y = 0; y < st->height; y++) {
-        int in_bar_row = (y >= st->height - BAR_HEIGHT_PX);
-        for (int x = 0; x < st->width; x++) {
+    for (int y = 0; y < height; y++) {
+        int in_bar_row = (y >= height - BAR_HEIGHT_PX);
+        for (int x = 0; x < width; x++) {
             uint32_t val = pixel;
             if (in_bar_row && x < bar_fill_px)
                 val = bar_pixel;
-            st->pixels[y * st->width + x] = val;
+            st->pixels[y * width + x] = val;
         }
     }
 
-    wl_surface_attach(st->surface, st->buffer, 0, 0);
-    wl_surface_damage_buffer(st->surface, 0, 0, st->width, st->height);
-    wl_surface_commit(st->surface);
+    wl_surface_attach(st->overlay.surface, st->buffer, 0, 0);
+    wl_surface_damage_buffer(st->overlay.surface, 0, 0, width, height);
+    wl_surface_commit(st->overlay.surface);
 }
-
-static void layer_surface_configure(void *data,
-                                     struct zwlr_layer_surface_v1 *ls,
-                                     uint32_t serial,
-                                     uint32_t width, uint32_t height) {
-    state_t *st = data;
-
-    zwlr_layer_surface_v1_ack_configure(ls, serial);
-
-    st->width = (int)width;
-    st->height = (int)height;
-    st->configured = 1;
-}
-
-static void layer_surface_closed(void *data,
-                                  struct zwlr_layer_surface_v1 *ls) {
-    (void)ls;
-    state_t *st = data;
-    st->configured = -1;
-}
-
-static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
-    .configure = layer_surface_configure,
-    .closed = layer_surface_closed,
-};
 
 int refresh_cycle_run(void) {
     struct sigaction sa = {0};
@@ -199,33 +174,19 @@ int refresh_cycle_run(void) {
         return -1;
     }
 
-    st.surface = wl_compositor_create_surface(st.compositor);
-    st.layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        st.layer_shell, st.surface, NULL,
-        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "wayoled-refresh");
-
-    zwlr_layer_surface_v1_add_listener(st.layer_surface,
-                                        &layer_surface_listener, &st);
-
-    zwlr_layer_surface_v1_set_anchor(st.layer_surface,
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-    zwlr_layer_surface_v1_set_exclusive_zone(st.layer_surface, -1);
-    zwlr_layer_surface_v1_set_keyboard_interactivity(st.layer_surface, 0);
-
-    wl_surface_commit(st.surface);
-    wl_display_roundtrip(st.display);
-
-    if (st.configured != 1 || st.width <= 0 || st.height <= 0) {
-        fprintf(stderr, "wayoled: layer surface failed to configure\n");
+    if (overlay_create(st.display, st.compositor, st.layer_shell, "wayoled-refresh", &st.overlay) != 0) {
+        wl_display_disconnect(st.display);
         return -1;
     }
 
-    if (create_shm_buffer(&st) != 0)
+    if (create_shm_buffer(&st) != 0) {
+        overlay_destroy(&st.overlay);
+        wl_display_disconnect(st.display);
         return -1;
+    }
 
     fprintf(stderr, "wayoled: starting pixel-refresh cycle (%dx%d)\n",
-            st.width, st.height);
+            st.overlay.width, st.overlay.height);
 
     for (size_t i = 0; i < SEQ_LEN; i++) {
         struct timespec start, now;
@@ -248,17 +209,18 @@ int refresh_cycle_run(void) {
             usleep(16667); // ~60Hz
             wl_display_dispatch_pending(st.display);
 
-            if (st.configured < 0) {
+            if (st.overlay.configured < 0) {
                 fprintf(stderr, "wayoled: surface closed, aborting refresh\n");
                 destroy_shm_buffer(&st);
+                overlay_destroy(&st.overlay);
+                wl_display_disconnect(st.display);
                 return -1;
             }
 
             if (g_stop_requested) {
                 fprintf(stderr, "wayoled: refresh cycle cancelled\n");
                 destroy_shm_buffer(&st);
-                zwlr_layer_surface_v1_destroy(st.layer_surface);
-                wl_surface_destroy(st.surface);
+                overlay_destroy(&st.overlay);
                 wl_display_disconnect(st.display);
                 return 1;
             }
@@ -268,8 +230,7 @@ int refresh_cycle_run(void) {
     fprintf(stderr, "wayoled: pixel-refresh cycle complete\n");
 
     destroy_shm_buffer(&st);
-    zwlr_layer_surface_v1_destroy(st.layer_surface);
-    wl_surface_destroy(st.surface);
+    overlay_destroy(&st.overlay);
     wl_display_disconnect(st.display);
 
     return 0;
