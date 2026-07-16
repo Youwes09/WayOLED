@@ -28,6 +28,10 @@ static const struct zwlr_gamma_control_v1_listener gamma_listener = {
 int dimmer_init(dimmer_t *dm, struct zwlr_gamma_control_manager_v1 *manager, struct wl_output *output) {
     memset(dm, 0, sizeof(*dm));
     dm->manager = manager;
+    dm->dim_factor = 1.0;
+    dm->temp_r = 1.0;
+    dm->temp_g = 1.0;
+    dm->temp_b = 1.0;
 
     if (!manager) {
         fprintf(stderr, "wayoled: gamma-control unavailable, dimming disabled\n");
@@ -55,7 +59,7 @@ int dimmer_confirm(dimmer_t *dm, struct wl_display *display) {
     return 0;
 }
 
-void dimmer_set_factor(dimmer_t *dm, double factor) {
+void dimmer_render(dimmer_t *dm) {
     if (!dm->available || !dm->control)
         return;
 
@@ -64,12 +68,19 @@ void dimmer_set_factor(dimmer_t *dm, double factor) {
     if (!table)
         return;
 
+    double rf = dm->dim_factor * dm->temp_r;
+    double gf = dm->dim_factor * dm->temp_g;
+    double bf = dm->dim_factor * dm->temp_b;
+
+    if (rf > 1.0) rf = 1.0;
+    if (gf > 1.0) gf = 1.0;
+    if (bf > 1.0) bf = 1.0;
+
     for (uint32_t i = 0; i < dm->ramp_size; i++) {
         double base = (double)i * 65535.0 / (double)(dm->ramp_size - 1);
-        uint16_t v = (uint16_t)(base * factor);
-        table[i] = v;
-        table[dm->ramp_size + i] = v;
-        table[2 * dm->ramp_size + i] = v;
+        table[i] = (uint16_t)(base * rf);
+        table[dm->ramp_size + i] = (uint16_t)(base * gf);
+        table[2 * dm->ramp_size + i] = (uint16_t)(base * bf);
     }
 
     int fd = memfd_create("wayoled-gamma", MFD_CLOEXEC);
@@ -93,11 +104,18 @@ void dimmer_transition(dimmer_t *dm, struct wl_display *display, double from, do
         return;
 
     for (int i = 1; i <= steps; i++) {
-        double factor = from + (to - from) * ((double)i / steps);
-        dimmer_set_factor(dm, factor);
+        dm->dim_factor = from + (to - from) * ((double)i / steps);
+        dimmer_render(dm);
         wl_display_flush(display);
         usleep(step_us);
     }
+}
+
+void dimmer_set_colortemp(dimmer_t *dm, double r, double g, double b) {
+    dm->temp_r = r;
+    dm->temp_g = g;
+    dm->temp_b = b;
+    dimmer_render(dm);
 }
 
 void dimmer_destroy(dimmer_t *dm) {

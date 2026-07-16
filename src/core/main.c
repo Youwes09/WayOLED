@@ -11,6 +11,7 @@
 #include "state.h"
 #include "wayland_globals.h"
 #include "profile.h"
+#include "../colortemp/colortemp.h"
 #include "../ipc/ipc_commands.h"
 #include "../wayland/refresh_cycle.h"
 
@@ -21,6 +22,36 @@
 #define MAX_DIFF_RATIO 0.02
 #define STATIC_CHECK_INTERVAL_MS 30000
 #define SCHEDULE_CHECK_INTERVAL_MS 60000
+#define COLORTEMP_CHECK_INTERVAL_MS 60000
+#define CONNECT_RETRY_INITIAL_MS 1000
+#define CONNECT_RETRY_MAX_MS 30000
+#define CONNECT_RETRY_LOG_EVERY 10
+
+static struct wl_display *connect_with_retry(void) {
+    int attempt = 0;
+    int delay_ms = CONNECT_RETRY_INITIAL_MS;
+
+    for (;;) {
+        struct wl_display *display = wl_display_connect(NULL);
+        if (display)
+            return display;
+
+        attempt++;
+        if (attempt == 1 || attempt % CONNECT_RETRY_LOG_EVERY == 0) {
+            fprintf(stderr, "wayoled: no Wayland display yet (attempt %d), retrying every %dms\n",
+                attempt, delay_ms);
+        }
+
+        struct timespec ts = {
+            .tv_sec = delay_ms / 1000,
+            .tv_nsec = (delay_ms % 1000) * 1000000L,
+        };
+        nanosleep(&ts, NULL);
+
+        if (delay_ms < CONNECT_RETRY_MAX_MS)
+            delay_ms = delay_ms * 2 < CONNECT_RETRY_MAX_MS ? delay_ms * 2 : CONNECT_RETRY_MAX_MS;
+    }
+}
 
 static void arm_timer(int fd, int interval_ms) {
     struct itimerspec ts = {0};
@@ -36,6 +67,9 @@ static void drain_timer(int fd) {
 }
 
 static void check_static_content(wayoled_state_t *st) {
+    if (!st->screencopy_available)
+        return;
+
     if (screencopy_capture(&st->screencopy, st->display) != 0)
         return;
 
@@ -53,7 +87,7 @@ static void check_static_content(wayoled_state_t *st) {
     st->last_hashes = hashes;
     st->last_hash_count = count;
 
-    if (!st->manual_override && !st->paused) {
+    if (!st->manual_override && !st->paused && st->risk_monitor_enabled) {
         int risk = (st->static_count >= st->static_threshold_polls) && st->idle.is_idle;
         if (risk && !st->dimmed && st->dimmer.available) {
             fprintf(stderr, "wayoled: static content + idle detected, dimming\n");
@@ -95,7 +129,8 @@ static void check_schedule(wayoled_state_t *st) {
         profile_apply(st, target);
 }
 
-static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_schedule, int *was_idle) {
+static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_schedule,
+                     int *ms_since_colortemp, int *was_idle) {
     if (st->backlight_available)
         backlight_tick(&st->backlight, STEP_FRACTION);
 
@@ -122,6 +157,12 @@ static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_sch
         *ms_since_schedule = 0;
         check_schedule(st);
     }
+
+    *ms_since_colortemp += TICK_MS;
+    if (*ms_since_colortemp >= COLORTEMP_CHECK_INTERVAL_MS) {
+        *ms_since_colortemp = 0;
+        colortemp_tick(st);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -135,11 +176,7 @@ int main(int argc, char *argv[]) {
     profile_apply(&st, "default");
     scheduler_load(&st.scheduler);
 
-    st.display = wl_display_connect(NULL);
-    if (!st.display) {
-        fprintf(stderr, "wayoled: failed to connect to Wayland display\n");
-        return 1;
-    }
+    st.display = connect_with_retry();
 
     wayland_globals_t g;
     wayland_globals_bind(st.display, &g);
@@ -153,16 +190,25 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "wayoled: compositor missing wl_seat or ext_idle_notifier_v1\n");
         return 1;
     }
-    if (!g.shm || !g.screencopy_manager || !g.output) {
-        fprintf(stderr, "wayoled: compositor missing shm/screencopy/output\n");
+    if (!g.output) {
+        fprintf(stderr, "wayoled: compositor missing wl_output\n");
         return 1;
+    }
+    if (!g.shm || !g.screencopy_manager) {
+        fprintf(stderr, "wayoled: compositor missing wl_shm or "
+                         "zwlr_screencopy_manager_v1, continuing without "
+                         "static-content risk detection\n");
     }
 
     if (idle_watch_init(&st.idle, g.seat, g.idle_notifier, IDLE_TIMEOUT_MS) != 0)
         return 1;
 
-    if (screencopy_init(&st.screencopy, g.shm, g.screencopy_manager, g.output) != 0)
-        return 1;
+    if (g.shm && g.screencopy_manager &&
+        screencopy_init(&st.screencopy, g.shm, g.screencopy_manager, g.output) == 0) {
+        st.screencopy_available = 1;
+    } else {
+        st.screencopy_available = 0;
+    }
 
     if (dimmer_init(&st.dimmer, g.gamma_manager, g.output) == 0)
         dimmer_confirm(&st.dimmer, st.display);
@@ -193,7 +239,10 @@ int main(int argc, char *argv[]) {
 
     int ms_since_static = 0;
     int ms_since_schedule = 0;
+    int ms_since_colortemp = 0;
     int was_idle = 0;
+
+    colortemp_tick(&st);
 
     for (;;) {
         wl_display_flush(st.display);
@@ -217,7 +266,7 @@ int main(int argc, char *argv[]) {
 
         if (fds[3].revents & POLLIN) {
             drain_timer(timer_fd);
-            on_tick(&st, &ms_since_static, &ms_since_schedule, &was_idle);
+            on_tick(&st, &ms_since_static, &ms_since_schedule, &ms_since_colortemp, &was_idle);
         }
 
         if (st.ipc.listen_fd >= 0 && (fds[2].revents & POLLIN)) {
@@ -230,7 +279,8 @@ int main(int argc, char *argv[]) {
     free(st.last_hashes);
     dimmer_destroy(&st.dimmer);
     ipc_server_destroy(&st.ipc);
-    screencopy_destroy(&st.screencopy);
+    if (st.screencopy_available)
+        screencopy_destroy(&st.screencopy);
     idle_watch_destroy(&st.idle);
     if (st.backlight_available) {
         watcher_close(&st.bl_watcher);

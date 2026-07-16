@@ -28,6 +28,7 @@ typedef struct {
     int backlight_available;
     idle_watch_t idle;
     screencopy_t screencopy;
+    int screencopy_available;
     dimmer_t dimmer;
     ipc_server_t ipc;
     scheduler_t scheduler;
@@ -40,9 +41,15 @@ typedef struct {
     int profile_pinned;
     int static_count;
     int static_threshold_polls;
+    int risk_monitor_enabled;
     double dim_factor;
     uint64_t *last_hashes;
     int last_hash_count;
+
+    int colortemp_enabled;
+    int day_temp;
+    int night_temp;
+    int colortemp_kelvin;
 
     int refresh_in_progress;
     pid_t refresh_pid;

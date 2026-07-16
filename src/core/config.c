@@ -24,6 +24,12 @@ static void parse_profile_file(FILE *f, wayoled_profile_t *out) {
             out->min_safe_brightness = atol(value);
         else if (strcmp(key, "risk_monitor_enabled") == 0)
             out->risk_monitor_enabled = atoi(value);
+        else if (strcmp(key, "colortemp_enabled") == 0)
+            out->colortemp_enabled = atoi(value);
+        else if (strcmp(key, "day_temp") == 0)
+            out->day_temp = atoi(value);
+        else if (strcmp(key, "night_temp") == 0)
+            out->night_temp = atoi(value);
     }
 }
 
@@ -34,6 +40,9 @@ void config_default_profile(wayoled_profile_t *out) {
     out->static_threshold_polls = 20;
     out->min_safe_brightness = 2;
     out->risk_monitor_enabled = 1;
+    out->colortemp_enabled = 1;
+    out->day_temp = 6500;
+    out->night_temp = 3400;
 }
 
 int config_load_profile(const char *name, wayoled_profile_t *out) {

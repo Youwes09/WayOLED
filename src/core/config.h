@@ -11,13 +11,15 @@ typedef struct {
     int static_threshold_polls;
     long min_safe_brightness;
     int risk_monitor_enabled;
+    int colortemp_enabled;
+    int day_temp;
+    int night_temp;
 } wayoled_profile_t;
 
 #define CONFIG_LIST_MAX 64
 
 int config_load_profile(const char *name, wayoled_profile_t *out);
 void config_default_profile(wayoled_profile_t *out);
-
 int config_list_profiles(char out_names[][CONFIG_PROFILE_NAME_MAX]);
 
 #endif

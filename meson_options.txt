@@ -1,0 +1,11 @@
+option('install-setuid-helper', type: 'boolean', value: false,
+  description: 'Install wayoled-brightness-helper with the setuid bit set. ' +
+               'Leave off if the 90-wayoled-backlight.rules udev rule already ' +
+               'grants group write access on your hardware (the common case).')
+
+option('install-systemd-unit', type: 'boolean', value: true,
+  description: 'Install the systemd --user unit for wayoled.')
+
+option('systemd-user-unit-dir', type: 'string', value: '',
+  description: 'Override install path for the systemd user unit. ' +
+               'Empty = ask pkg-config systemd.pc, falling back to $prefix/lib/systemd/user.')

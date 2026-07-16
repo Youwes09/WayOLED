@@ -2,3 +2,4 @@ build/
 .direnv/
 result
 *.o
+build/

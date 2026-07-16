@@ -1,6 +1,7 @@
 #include "ipc_commands.h"
 #include "../core/profile.h"
 #include "../core/config.h"
+#include "../colortemp/colortemp.h"
 #include "../wayland/refresh_cycle.h"
 
 #include <stdio.h>
@@ -24,11 +25,17 @@ static long raw_to_percent(const backlight_dev_t *dev, long raw) {
 
 static void cmd_status(wayoled_state_t *st, const char *args, char *resp, size_t max) {
     (void)args;
+    char temp_field[16];
+    if (st->colortemp_enabled)
+        snprintf(temp_field, sizeof(temp_field), "%d", st->colortemp_kelvin);
+    else
+        snprintf(temp_field, sizeof(temp_field), "off");
+
     snprintf(resp, max,
-        "dimmed=%d manual=%d paused=%d idle=%d static_count=%d brightness=%ld%% profile=%s pinned=%d refresh=%d\n",
+        "dimmed=%d manual=%d paused=%d idle=%d static_count=%d brightness=%ld%% profile=%s pinned=%d refresh=%d colortemp=%s\n",
         st->dimmed, st->manual_override, st->paused, st->idle.is_idle,
         st->static_count, raw_to_percent(&st->backlight, st->backlight.current_brightness),
-        st->profile[0] ? st->profile : "default", st->profile_pinned, st->refresh_in_progress);
+        st->profile[0] ? st->profile : "default", st->profile_pinned, st->refresh_in_progress, temp_field);
 }
 
 static void cmd_dim(wayoled_state_t *st, const char *args, char *resp, size_t max) {
@@ -207,12 +214,47 @@ static const char *const HELP_TEXT =
     "profile [name]            show or switch+pin the active profile\n"
     "profiles                  list available profile names\n"
     "auto                      unpin, hand control back to the scheduler\n"
+    "colortemp get|on|off      show or toggle time-of-day color warmth\n"
     "help                      show this text\n";
 
 static void cmd_help(wayoled_state_t *st, const char *args, char *resp, size_t max) {
     (void)st;
     (void)args;
     snprintf(resp, max, "%s", HELP_TEXT);
+}
+
+static void cmd_colortemp(wayoled_state_t *st, const char *args, char *resp, size_t max) {
+    if (!st->dimmer.available) {
+        snprintf(resp, max, "err no gamma control\n");
+        return;
+    }
+
+    if (args[0] == '\0' || strcmp(args, "get") == 0) {
+        if (st->colortemp_enabled)
+            snprintf(resp, max, "enabled=1 kelvin=%d day=%d night=%d\n",
+                st->colortemp_kelvin, st->day_temp, st->night_temp);
+        else
+            snprintf(resp, max, "enabled=0\n");
+        return;
+    }
+
+    if (strcmp(args, "on") == 0) {
+        st->colortemp_enabled = 1;
+        st->colortemp_kelvin = 0;
+        colortemp_tick(st);
+        snprintf(resp, max, "ok enabled=1\n");
+        return;
+    }
+
+    if (strcmp(args, "off") == 0) {
+        st->colortemp_enabled = 0;
+        dimmer_set_colortemp(&st->dimmer, 1.0, 1.0, 1.0);
+        st->colortemp_kelvin = 0;
+        snprintf(resp, max, "ok enabled=0\n");
+        return;
+    }
+
+    snprintf(resp, max, "err usage: colortemp get|on|off\n");
 }
 
 typedef struct {
@@ -231,6 +273,7 @@ static const ipc_cmd_entry_t commands[] = {
     { "profile",    cmd_profile },
     { "profiles",   cmd_profiles },
     { "auto",       cmd_auto },
+    { "colortemp",  cmd_colortemp },
     { "help",       cmd_help },
 };
 

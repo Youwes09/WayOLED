@@ -1,0 +1,22 @@
+[Unit]
+Description=WayOLED display protection daemon
+Documentation=man:wayoled(1)
+After=default.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wayoled
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp
+PrivateTmp=false
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=default.target

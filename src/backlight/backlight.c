@@ -25,14 +25,26 @@ int backlight_detect(backlight_dev_t *dev) {
         if (entry->d_name[0] == '.')
             continue;
 
-        snprintf(dev->device_path, BACKLIGHT_PATH_MAX, "%s/%s",
-                  BACKLIGHT_SYSFS_DIR, entry->d_name);
+        int n = snprintf(dev->device_path, BACKLIGHT_PATH_MAX, "%s/%s",
+                          BACKLIGHT_SYSFS_DIR, entry->d_name);
+        if (n < 0 || (size_t)n >= BACKLIGHT_PATH_MAX) {
+            fprintf(stderr, "wayoled: skipping %s, path too long for %d-byte buffer\n",
+                    entry->d_name, BACKLIGHT_PATH_MAX);
+            continue;
+        }
+
         strncpy(dev->device_name, entry->d_name, sizeof(dev->device_name) - 1);
         dev->device_name[sizeof(dev->device_name) - 1] = '\0';
-        snprintf(dev->brightness_path, BACKLIGHT_PATH_MAX, "%s/brightness",
-                  dev->device_path);
-        snprintf(dev->max_brightness_path, BACKLIGHT_PATH_MAX,
-                  "%s/max_brightness", dev->device_path);
+
+        n = snprintf(dev->brightness_path, BACKLIGHT_PATH_MAX, "%s/brightness",
+                     dev->device_path);
+        if (n < 0 || (size_t)n >= BACKLIGHT_PATH_MAX)
+            continue;
+
+        n = snprintf(dev->max_brightness_path, BACKLIGHT_PATH_MAX,
+                     "%s/max_brightness", dev->device_path);
+        if (n < 0 || (size_t)n >= BACKLIGHT_PATH_MAX)
+            continue;
 
         if (access(dev->brightness_path, R_OK) == 0 &&
             access(dev->max_brightness_path, R_OK) == 0) {
