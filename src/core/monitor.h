@@ -10,4 +10,9 @@ int monitor_resolve(wayoled_state_t *st, const char *cli_name,
                      char *err, size_t err_max);
 void monitor_name_list(wayoled_state_t *st, char *buf, size_t max);
 
+void monitor_add(wayoled_state_t *st, struct wl_output *output,
+                  uint32_t registry_name, uint32_t version);
+void monitor_mark_removed(wayoled_state_t *st, uint32_t registry_name);
+void monitor_reconcile(wayoled_state_t *st);
+
 #endif

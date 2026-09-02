@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  distro-build:
+    name: build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arch
+            image: archlinux:latest
+            setup: pacman -Sy --noconfirm --needed gcc clang meson ninja pkgconf wayland wayland-protocols systemd-libs
+          - name: fedora
+            image: fedora:latest
+            setup: dnf -y install gcc clang meson ninja-build pkgconf-pkg-config wayland-devel wayland-protocols-devel systemd-devel
+          - name: debian
+            image: debian:testing
+            setup: apt-get update && apt-get install -y build-essential clang meson ninja-build pkg-config libwayland-dev wayland-protocols libudev-dev
+          - name: alpine
+            image: alpine:latest
+            setup: apk add build-base clang meson ninja-build pkgconf wayland-dev wayland-protocols eudev-dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: ${{ matrix.setup }}
+      - name: Build (gcc, --werror)
+        run: |
+          meson setup build-gcc -Dinstall-systemd-unit=false --buildtype=debugoptimized --werror
+          meson compile -C build-gcc
+      - name: Build (clang, --werror)
+        run: |
+          CC=clang meson setup build-clang -Dinstall-systemd-unit=false --buildtype=debugoptimized --werror
+          meson compile -C build-clang
+
+  nix:
+    name: nix flake check + integration VM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Build package
+        run: nix build -L .#packages.x86_64-linux.default
+      - name: Flake check (runs the headless-sway integration test)
+        run: nix flake check -L

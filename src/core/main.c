@@ -12,6 +12,7 @@
 
 #include "state.h"
 #include "wayland_globals.h"
+#include "monitor.h"
 #include "profile.h"
 #include "../colortemp/colortemp.h"
 #include "../ipc/ipc_commands.h"
@@ -34,6 +35,15 @@ static volatile sig_atomic_t g_running = 1;
 static void handle_signal(int signum) {
     (void)signum;
     g_running = 0;
+}
+
+static void on_output_added(void *user, struct wl_output *output,
+                             uint32_t registry_name, uint32_t version) {
+    monitor_add((wayoled_state_t *)user, output, registry_name, version);
+}
+
+static void on_output_removed(void *user, uint32_t registry_name) {
+    monitor_mark_removed((wayoled_state_t *)user, registry_name);
 }
 
 static struct wl_display *connect_with_retry(void) {
@@ -225,15 +235,17 @@ int main(int argc, char *argv[]) {
     if (!st.display)
         return 0;
 
-    wayland_globals_t g;
-    if (wayland_globals_bind(st.display, &g) != 0) {
-        fprintf(stderr, "wayoled: compositor missing wl_output\n");
-        return 1;
-    }
+    wayland_globals_t g = {0};
+    g.output_added = on_output_added;
+    g.output_removed = on_output_removed;
+    g.user = &st;
+    wayland_globals_bind(st.display, &g);
+
     st.seat = g.seat;
     st.shm = g.shm;
     st.screencopy_manager = g.screencopy_manager;
     st.gamma_manager = g.gamma_manager;
+    st.cap_pixel_refresh = g.layer_shell != NULL;
 
     if (!g.seat || !g.idle_notifier) {
         fprintf(stderr, "wayoled: compositor missing wl_seat or ext_idle_notifier_v1\n");
@@ -243,29 +255,10 @@ int main(int argc, char *argv[]) {
     if (idle_watch_init(&st.idle, g.seat, g.idle_notifier, IDLE_TIMEOUT_MS) != 0)
         return 1;
 
-    int have_capture = g.shm && g.screencopy_manager;
-    st.cap_pixel_refresh = g.layer_shell != NULL;
-
-    st.monitor_count = g.output_count;
-    for (int i = 0; i < g.output_count; i++) {
-        wayoled_monitor_t *mon = &st.monitors[i];
-        strncpy(mon->name, g.outputs[i].name, sizeof(mon->name) - 1);
-        mon->name[sizeof(mon->name) - 1] = '\0';
-        mon->output = g.outputs[i].output;
-
-        if (have_capture &&
-            screencopy_init(&mon->screencopy, g.shm, g.screencopy_manager, mon->output) == 0) {
-            mon->screencopy_available = 1;
-            st.cap_static_content = 1;
-        }
-
-        if (g.gamma_manager && dimmer_init(&mon->dimmer, g.gamma_manager, mon->output) == 0) {
-            dimmer_confirm(&mon->dimmer, st.display);
-            if (mon->dimmer.available)
-                st.cap_gamma = 1;
-        }
-
-        profile_apply(mon, "default");
+    monitor_reconcile(&st);
+    if (st.monitor_count == 0) {
+        fprintf(stderr, "wayoled: compositor exposed no wl_output\n");
+        return 1;
     }
 
     if (backlight_detect(&st.backlight) == 0) {
@@ -310,9 +303,6 @@ int main(int argc, char *argv[]) {
     int ms_since_colortemp = 0;
     int was_idle = 0;
 
-    for (int i = 0; i < st.monitor_count; i++)
-        colortemp_tick(&st.monitors[i]);
-
     while (g_running) {
         while (wl_display_prepare_read(st.display) != 0)
             wl_display_dispatch_pending(st.display);
@@ -342,6 +332,8 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "wayoled: Wayland connection lost, exiting\n");
             break;
         }
+
+        monitor_reconcile(&st);
 
         if (st.bl_watcher.inotify_fd >= 0 && (fds[1].revents & POLLIN))
             watcher_poll(&st.bl_watcher, &st.backlight);

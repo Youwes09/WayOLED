@@ -19,6 +19,9 @@
 typedef struct {
     char name[WAYOLED_MONITOR_NAME_MAX];
     struct wl_output *output;
+    uint32_t registry_name;
+    int pending;
+    int removing;
 
     dimmer_t dimmer;
     screencopy_t screencopy;
