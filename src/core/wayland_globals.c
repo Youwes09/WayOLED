@@ -60,6 +60,8 @@ static void registry_global(void *data, struct wl_registry *registry,
         g->image_copy_manager = wl_registry_bind(registry, name, &ext_image_copy_capture_manager_v1_interface, 1);
     } else if (strcmp(interface, zwlr_gamma_control_manager_v1_interface.name) == 0) {
         g->gamma_manager = wl_registry_bind(registry, name, &zwlr_gamma_control_manager_v1_interface, 1);
+    } else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
+        g->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 1);
     } else if (strcmp(interface, wl_output_interface.name) == 0) {
         if (g->output_count < WAYOLED_MAX_MONITORS) {
             uint32_t bind_ver = version < 4 ? version : 4;

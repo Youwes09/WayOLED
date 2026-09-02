@@ -67,6 +67,10 @@ typedef struct {
 
     int paused;
 
+    int cap_static_content;
+    int cap_gamma;
+    int cap_pixel_refresh;
+
     wayoled_monitor_t monitors[WAYOLED_MAX_MONITORS];
     int monitor_count;
 } wayoled_state_t;

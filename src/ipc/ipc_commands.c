@@ -197,6 +197,11 @@ static void cmd_brightness(wayoled_state_t *st, const char *args, const char *mo
 }
 
 static void cmd_refresh(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {
+    if (!st->cap_pixel_refresh) {
+        snprintf(resp, max, "err pixel-refresh unavailable (needs wlr-layer-shell-v1)\n");
+        return;
+    }
+
     int stop = (strcmp(args, "stop") == 0);
     if (!stop && args[0] != '\0') {
         snprintf(resp, max, "err usage: refresh|refresh stop\n");
@@ -396,6 +401,7 @@ static const char *const HELP_TEXT =
     "colortemp get|on|off        show or toggle time-of-day color warmth\n"
     "gamma get|<v>|<r:g:b>|reset  show or set the per-channel gamma curve\n"
     "monitors                    list detected output names\n"
+    "capabilities                report which features the compositor supports\n"
     "help                        show this text\n";
 
 static void cmd_gamma(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {
@@ -454,6 +460,13 @@ static void cmd_gamma(wayoled_state_t *st, const char *args, const char *monitor
     snprintf(resp, max, "ok gamma=%.2f:%.2f:%.2f\n", r, g, b);
 }
 
+static void cmd_capabilities(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {
+    (void)args; (void)monitor;
+    snprintf(resp, max,
+        "static_content=%d gamma=%d pixel_refresh=%d backlight=%d idle=1\n",
+        st->cap_static_content, st->cap_gamma, st->cap_pixel_refresh, st->backlight_available);
+}
+
 static void cmd_help(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {
     (void)st; (void)args; (void)monitor;
     snprintf(resp, max, "%s", HELP_TEXT);
@@ -465,20 +478,21 @@ typedef struct {
 } ipc_cmd_entry_t;
 
 static const ipc_cmd_entry_t commands[] = {
-    { "status",     cmd_status },
-    { "dim",        cmd_dim },
-    { "restore",    cmd_restore },
-    { "pause",      cmd_pause },
-    { "resume",     cmd_resume },
-    { "brightness", cmd_brightness },
-    { "refresh",    cmd_refresh },
-    { "profile",    cmd_profile },
-    { "profiles",   cmd_profiles },
-    { "auto",       cmd_auto },
-    { "colortemp",  cmd_colortemp },
-    { "gamma",      cmd_gamma },
-    { "monitors",   cmd_monitors },
-    { "help",       cmd_help },
+    { "status",       cmd_status },
+    { "dim",          cmd_dim },
+    { "restore",      cmd_restore },
+    { "pause",        cmd_pause },
+    { "resume",       cmd_resume },
+    { "brightness",   cmd_brightness },
+    { "refresh",      cmd_refresh },
+    { "profile",      cmd_profile },
+    { "profiles",     cmd_profiles },
+    { "auto",         cmd_auto },
+    { "colortemp",    cmd_colortemp },
+    { "gamma",        cmd_gamma },
+    { "monitors",     cmd_monitors },
+    { "capabilities", cmd_capabilities },
+    { "help",         cmd_help },
 };
 
 void ipc_dispatch(wayoled_state_t *st, const char *cmd) {

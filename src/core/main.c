@@ -209,28 +209,32 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "wayoled: compositor missing wl_seat or ext_idle_notifier_v1\n");
         return 1;
     }
-    if (!g.shm || !g.image_source_manager || !g.image_copy_manager) {
-        fprintf(stderr, "wayoled: compositor missing wl_shm or ext-image-copy-capture-v1, "
-                         "continuing without static-content risk detection\n");
-    }
 
     if (idle_watch_init(&st.idle, g.seat, g.idle_notifier, IDLE_TIMEOUT_MS) != 0)
         return 1;
+
+    int have_capture = g.shm && g.image_source_manager && g.image_copy_manager;
+    st.cap_pixel_refresh = g.layer_shell != NULL;
 
     st.monitor_count = g.output_count;
     for (int i = 0; i < g.output_count; i++) {
         wayoled_monitor_t *mon = &st.monitors[i];
         strncpy(mon->name, g.outputs[i].name, sizeof(mon->name) - 1);
+        mon->name[sizeof(mon->name) - 1] = '\0';
         mon->output = g.outputs[i].output;
 
-        if (g.shm && g.image_source_manager && g.image_copy_manager &&
+        if (have_capture &&
             screencopy_init(&mon->screencopy, g.shm, g.image_source_manager,
                             g.image_copy_manager, mon->output, st.display) == 0) {
             mon->screencopy_available = 1;
+            st.cap_static_content = 1;
         }
 
-        if (dimmer_init(&mon->dimmer, g.gamma_manager, mon->output) == 0)
+        if (g.gamma_manager && dimmer_init(&mon->dimmer, g.gamma_manager, mon->output) == 0) {
             dimmer_confirm(&mon->dimmer, st.display);
+            if (mon->dimmer.available)
+                st.cap_gamma = 1;
+        }
 
         profile_apply(mon, "default");
     }
@@ -256,8 +260,21 @@ int main(int argc, char *argv[]) {
     int timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     arm_timer(timer_fd, TICK_MS);
 
-    fprintf(stderr, "wayoled: daemon started (backlight=%s monitors=%d)\n",
-        st.backlight_available ? st.backlight.brightness_path : "unavailable", st.monitor_count);
+    fprintf(stderr, "wayoled: capabilities:\n");
+    fprintf(stderr, "  static-content detection : %s\n",
+        st.cap_static_content ? "on (ext-image-copy-capture-v1)"
+                              : "off (ext-image-copy-capture-v1 unavailable)");
+    fprintf(stderr, "  gamma dim / temp / curve : %s\n",
+        st.cap_gamma ? "on (wlr-gamma-control-v1)"
+                     : "off (wlr-gamma-control-v1 unavailable)");
+    fprintf(stderr, "  pixel-refresh sweep      : %s\n",
+        st.cap_pixel_refresh ? "on (wlr-layer-shell-v1)"
+                             : "off (wlr-layer-shell-v1 unavailable)");
+    fprintf(stderr, "  backlight control        : %s\n",
+        st.backlight_available ? st.backlight.brightness_path
+                               : "off (no /sys/class/backlight device)");
+    fprintf(stderr, "  idle detection           : on (ext-idle-notify-v1)\n");
+    fprintf(stderr, "wayoled: daemon started (monitors=%d)\n", st.monitor_count);
 
     int ms_since_static = 0;
     int ms_since_schedule = 0;

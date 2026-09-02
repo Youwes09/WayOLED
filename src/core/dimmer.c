@@ -37,10 +37,8 @@ int dimmer_init(dimmer_t *dm, struct zwlr_gamma_control_manager_v1 *manager, str
     dm->gamma_g = 1.0;
     dm->gamma_b = 1.0;
 
-    if (!manager) {
-        fprintf(stderr, "wayoled: gamma-control unavailable, dimming disabled\n");
+    if (!manager)
         return -1;
-    }
 
     dm->control = zwlr_gamma_control_manager_v1_get_gamma_control(manager, output);
     zwlr_gamma_control_v1_add_listener(dm->control, &gamma_listener, dm);
