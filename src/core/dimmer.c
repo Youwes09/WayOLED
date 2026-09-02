@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <math.h>
+#include <time.h>
 #include <sys/mman.h>
 
 static void gamma_size_event(void *data, struct zwlr_gamma_control_v1 *gc, uint32_t size) {
@@ -110,16 +111,45 @@ void dimmer_render(dimmer_t *dm) {
     free(table);
 }
 
-void dimmer_transition(dimmer_t *dm, struct wl_display *display, double from, double to, int steps, int step_us) {
+static long dimmer_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+void dimmer_fade_start(dimmer_t *dm, double to, int duration_ms) {
     if (!dm->available)
         return;
 
-    for (int i = 1; i <= steps; i++) {
-        dm->dim_factor = from + (to - from) * ((double)i / steps);
-        dimmer_render(dm);
-        wl_display_flush(display);
-        usleep(step_us);
+    dm->fade_from = dm->dim_factor;
+    dm->fade_to = to;
+    dm->fade_dur_ms = duration_ms > 0 ? duration_ms : 1;
+    dm->fade_start_ms = dimmer_now_ms();
+    dm->fading = 1;
+}
+
+int dimmer_fade_tick(dimmer_t *dm) {
+    if (!dm->fading)
+        return 0;
+
+    double t = (double)(dimmer_now_ms() - dm->fade_start_ms) / dm->fade_dur_ms;
+    if (t >= 1.0) {
+        dm->dim_factor = dm->fade_to;
+        dm->fading = 0;
+    } else {
+        dm->dim_factor = dm->fade_from + (dm->fade_to - dm->fade_from) * t;
     }
+
+    dimmer_render(dm);
+    return dm->fading;
+}
+
+void dimmer_reset(dimmer_t *dm) {
+    dm->fading = 0;
+    dm->dim_factor = 1.0;
+    dm->temp_r = dm->temp_g = dm->temp_b = 1.0;
+    dm->gamma_r = dm->gamma_g = dm->gamma_b = 1.0;
+    dimmer_render(dm);
 }
 
 void dimmer_set_colortemp(dimmer_t *dm, double r, double g, double b) {

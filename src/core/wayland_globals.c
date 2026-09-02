@@ -54,10 +54,8 @@ static void registry_global(void *data, struct wl_registry *registry,
         g->idle_notifier = wl_registry_bind(registry, name, &ext_idle_notifier_v1_interface, 1);
     } else if (strcmp(interface, wl_shm_interface.name) == 0) {
         g->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
-    } else if (strcmp(interface, ext_output_image_capture_source_manager_v1_interface.name) == 0) {
-        g->image_source_manager = wl_registry_bind(registry, name, &ext_output_image_capture_source_manager_v1_interface, 1);
-    } else if (strcmp(interface, ext_image_copy_capture_manager_v1_interface.name) == 0) {
-        g->image_copy_manager = wl_registry_bind(registry, name, &ext_image_copy_capture_manager_v1_interface, 1);
+    } else if (strcmp(interface, zwlr_screencopy_manager_v1_interface.name) == 0) {
+        g->screencopy_manager = wl_registry_bind(registry, name, &zwlr_screencopy_manager_v1_interface, 1);
     } else if (strcmp(interface, zwlr_gamma_control_manager_v1_interface.name) == 0) {
         g->gamma_manager = wl_registry_bind(registry, name, &zwlr_gamma_control_manager_v1_interface, 1);
     } else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {

@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <poll.h>
 #include <time.h>
+#include <errno.h>
+#include <signal.h>
 #include <sys/timerfd.h>
 #include <sys/wait.h>
 
@@ -27,11 +29,18 @@
 #define CONNECT_RETRY_MAX_MS 30000
 #define CONNECT_RETRY_LOG_EVERY 10
 
+static volatile sig_atomic_t g_running = 1;
+
+static void handle_signal(int signum) {
+    (void)signum;
+    g_running = 0;
+}
+
 static struct wl_display *connect_with_retry(void) {
     int attempt = 0;
     int delay_ms = CONNECT_RETRY_INITIAL_MS;
 
-    for (;;) {
+    while (g_running) {
         struct wl_display *display = wl_display_connect(NULL);
         if (display)
             return display;
@@ -51,6 +60,8 @@ static struct wl_display *connect_with_retry(void) {
         if (delay_ms < CONNECT_RETRY_MAX_MS)
             delay_ms = delay_ms * 2 < CONNECT_RETRY_MAX_MS ? delay_ms * 2 : CONNECT_RETRY_MAX_MS;
     }
+
+    return NULL;
 }
 
 static void arm_timer(int fd, int interval_ms) {
@@ -92,10 +103,22 @@ static void check_static_content(wayoled_state_t *st, wayoled_monitor_t *mon) {
         int risk = (mon->static_count >= mon->static_threshold_polls) && st->idle.is_idle;
         if (risk && !mon->dimmed && mon->dimmer.available) {
             fprintf(stderr, "wayoled: %s static content + idle detected, dimming\n", mon->name);
-            dimmer_transition(&mon->dimmer, st->display, 1.0, mon->dim_factor, 20, 15000);
+            dimmer_fade_start(&mon->dimmer, mon->dim_factor, DIMMER_FADE_MS);
             mon->dimmed = 1;
         }
     }
+}
+
+static void fades_tick(wayoled_state_t *st) {
+    int any = 0;
+    for (int i = 0; i < st->monitor_count; i++) {
+        if (st->monitors[i].dimmer.fading) {
+            dimmer_fade_tick(&st->monitors[i].dimmer);
+            any = 1;
+        }
+    }
+    if (any)
+        wl_display_flush(st->display);
 }
 
 static void reap_refresh(wayoled_state_t *st) {
@@ -152,7 +175,7 @@ static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_sch
             if (!mon->dimmed || !mon->dimmer.available)
                 continue;
             fprintf(stderr, "wayoled: activity detected, restoring %s\n", mon->name);
-            dimmer_transition(&mon->dimmer, st->display, mon->dim_factor, 1.0, 20, 15000);
+            dimmer_fade_start(&mon->dimmer, 1.0, DIMMER_FADE_MS);
             mon->dimmed = 0;
             mon->manual_override = 0;
             mon->static_count = 0;
@@ -186,6 +209,12 @@ int main(int argc, char *argv[]) {
     if (argc > 1 && strcmp(argv[1], "--refresh") == 0)
         return refresh_cycle_run(argc > 2 ? argv[2] : NULL) == 0 ? 0 : 1;
 
+    struct sigaction sa = { .sa_handler = handle_signal };
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    signal(SIGPIPE, SIG_IGN);
+
     wayoled_state_t st = {0};
     st.ipc.client_fd = -1;
     st.bl_watcher.inotify_fd = -1;
@@ -193,6 +222,8 @@ int main(int argc, char *argv[]) {
     scheduler_load(&st.scheduler);
 
     st.display = connect_with_retry();
+    if (!st.display)
+        return 0;
 
     wayland_globals_t g;
     if (wayland_globals_bind(st.display, &g) != 0) {
@@ -201,8 +232,7 @@ int main(int argc, char *argv[]) {
     }
     st.seat = g.seat;
     st.shm = g.shm;
-    st.image_source_manager = g.image_source_manager;
-    st.image_copy_manager = g.image_copy_manager;
+    st.screencopy_manager = g.screencopy_manager;
     st.gamma_manager = g.gamma_manager;
 
     if (!g.seat || !g.idle_notifier) {
@@ -213,7 +243,7 @@ int main(int argc, char *argv[]) {
     if (idle_watch_init(&st.idle, g.seat, g.idle_notifier, IDLE_TIMEOUT_MS) != 0)
         return 1;
 
-    int have_capture = g.shm && g.image_source_manager && g.image_copy_manager;
+    int have_capture = g.shm && g.screencopy_manager;
     st.cap_pixel_refresh = g.layer_shell != NULL;
 
     st.monitor_count = g.output_count;
@@ -224,8 +254,7 @@ int main(int argc, char *argv[]) {
         mon->output = g.outputs[i].output;
 
         if (have_capture &&
-            screencopy_init(&mon->screencopy, g.shm, g.image_source_manager,
-                            g.image_copy_manager, mon->output, st.display) == 0) {
+            screencopy_init(&mon->screencopy, g.shm, g.screencopy_manager, mon->output) == 0) {
             mon->screencopy_available = 1;
             st.cap_static_content = 1;
         }
@@ -262,8 +291,8 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "wayoled: capabilities:\n");
     fprintf(stderr, "  static-content detection : %s\n",
-        st.cap_static_content ? "on (ext-image-copy-capture-v1)"
-                              : "off (ext-image-copy-capture-v1 unavailable)");
+        st.cap_static_content ? "on (wlr-screencopy-v1)"
+                              : "off (wlr-screencopy-v1 unavailable)");
     fprintf(stderr, "  gamma dim / temp / curve : %s\n",
         st.cap_gamma ? "on (wlr-gamma-control-v1)"
                      : "off (wlr-gamma-control-v1 unavailable)");
@@ -284,7 +313,9 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < st.monitor_count; i++)
         colortemp_tick(&st.monitors[i]);
 
-    for (;;) {
+    while (g_running) {
+        while (wl_display_prepare_read(st.display) != 0)
+            wl_display_dispatch_pending(st.display);
         wl_display_flush(st.display);
 
         struct pollfd fds[4] = {
@@ -295,11 +326,22 @@ int main(int argc, char *argv[]) {
         };
 
         int n = poll(fds, 4, -1);
-        if (n < 0)
-            continue;
+        if (n < 0) {
+            wl_display_cancel_read(st.display);
+            if (errno == EINTR)
+                continue;
+            break;
+        }
 
         if (fds[0].revents & POLLIN)
-            wl_display_dispatch(st.display);
+            wl_display_read_events(st.display);
+        else
+            wl_display_cancel_read(st.display);
+
+        if (wl_display_dispatch_pending(st.display) < 0) {
+            fprintf(stderr, "wayoled: Wayland connection lost, exiting\n");
+            break;
+        }
 
         if (st.bl_watcher.inotify_fd >= 0 && (fds[1].revents & POLLIN))
             watcher_poll(&st.bl_watcher, &st.backlight);
@@ -314,7 +356,23 @@ int main(int argc, char *argv[]) {
             if (ipc_server_poll(&st.ipc, cmd, sizeof(cmd)) == 1)
                 ipc_dispatch(&st, cmd);
         }
+
+        fades_tick(&st);
     }
+
+    fprintf(stderr, "wayoled: shutting down\n");
+
+    for (int i = 0; i < st.monitor_count; i++) {
+        wayoled_monitor_t *mon = &st.monitors[i];
+        if (mon->refresh_in_progress) {
+            kill(mon->refresh_pid, SIGTERM);
+            waitpid(mon->refresh_pid, NULL, 0);
+        }
+        if (mon->dimmer.available)
+            dimmer_reset(&mon->dimmer);
+    }
+    wl_display_flush(st.display);
+    wl_display_roundtrip(st.display);
 
     for (int i = 0; i < st.monitor_count; i++) {
         wayoled_monitor_t *mon = &st.monitors[i];
@@ -323,6 +381,7 @@ int main(int argc, char *argv[]) {
         if (mon->screencopy_available)
             screencopy_destroy(&mon->screencopy);
     }
+    close(timer_fd);
     ipc_server_destroy(&st.ipc);
     idle_watch_destroy(&st.idle);
     if (st.backlight_available) {

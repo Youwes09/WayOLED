@@ -97,7 +97,7 @@ static void cmd_dim(wayoled_state_t *st, const char *args, const char *monitor, 
         wayoled_monitor_t *m = targets[i];
         if (!m->dimmer.available)
             continue;
-        dimmer_transition(&m->dimmer, st->display, 1.0, m->dim_factor, 20, 15000);
+        dimmer_fade_start(&m->dimmer, m->dim_factor, DIMMER_FADE_MS);
         m->dimmed = 1;
         m->manual_override = 1;
         ok++;
@@ -118,7 +118,7 @@ static void cmd_restore(wayoled_state_t *st, const char *args, const char *monit
         wayoled_monitor_t *m = targets[i];
         if (!m->dimmer.available)
             continue;
-        dimmer_transition(&m->dimmer, st->display, m->dim_factor, 1.0, 20, 15000);
+        dimmer_fade_start(&m->dimmer, 1.0, DIMMER_FADE_MS);
         m->dimmed = 0;
         m->manual_override = 0;
         m->static_count = 0;

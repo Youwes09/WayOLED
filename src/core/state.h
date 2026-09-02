@@ -54,8 +54,7 @@ typedef struct {
     struct wl_display *display;
     struct wl_seat *seat;
     struct wl_shm *shm;
-    struct ext_output_image_capture_source_manager_v1 *image_source_manager;
-    struct ext_image_copy_capture_manager_v1 *image_copy_manager;
+    struct zwlr_screencopy_manager_v1 *screencopy_manager;
     struct zwlr_gamma_control_manager_v1 *gamma_manager;
 
     backlight_dev_t backlight;

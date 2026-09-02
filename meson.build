@@ -27,9 +27,8 @@ protocols = [
   { 'name': 'xdg-shell',                       'src': wl_protocol_dir / 'stable/xdg-shell/xdg-shell.xml' },
   { 'name': 'wlr-layer-shell-unstable-v1',      'src': meson.project_source_root() / 'protocols/wlr-layer-shell-unstable-v1.xml' },
   { 'name': 'wlr-gamma-control-unstable-v1',    'src': meson.project_source_root() / 'protocols/wlr-gamma-control-unstable-v1.xml' },
+  { 'name': 'wlr-screencopy-unstable-v1',       'src': meson.project_source_root() / 'protocols/wlr-screencopy-unstable-v1.xml' },
   { 'name': 'ext-idle-notify-v1',               'src': meson.project_source_root() / 'protocols/ext-idle-notify-v1.xml' },
-  { 'name': 'ext-image-capture-source-v1',      'src': meson.project_source_root() / 'protocols/ext-image-capture-source-v1.xml' },
-  { 'name': 'ext-image-copy-capture-v1',        'src': wl_protocol_dir / 'staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml' },
 ]
 
 wl_protocol_sources = []
