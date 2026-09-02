@@ -1,6 +1,5 @@
 #define _GNU_SOURCE
 #include "screencopy.h"
-#include "wlr-screencopy-unstable-v1-client-protocol.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,111 +8,238 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+static int format_supported(uint32_t format) {
+    return format == WL_SHM_FORMAT_XRGB8888 ||
+           format == WL_SHM_FORMAT_ARGB8888 ||
+           format == WL_SHM_FORMAT_XBGR8888 ||
+           format == WL_SHM_FORMAT_ABGR8888;
+}
+
+static void release_buffer(screencopy_t *sc) {
+    if (sc->buffer) {
+        wl_buffer_destroy(sc->buffer);
+        sc->buffer = NULL;
+    }
+    if (sc->pool) {
+        wl_shm_pool_destroy(sc->pool);
+        sc->pool = NULL;
+    }
+    if (sc->pixels && sc->pixels != MAP_FAILED) {
+        munmap(sc->pixels, sc->size);
+        sc->pixels = NULL;
+    }
+    if (sc->fd >= 0) {
+        close(sc->fd);
+        sc->fd = -1;
+    }
+    sc->size = 0;
+}
+
+static int rebuild_buffer(screencopy_t *sc) {
+    release_buffer(sc);
+
+    if (sc->width <= 0 || sc->height <= 0 || !sc->have_format)
+        return -1;
+
+    sc->stride = sc->width * 4;
+    sc->size = (size_t)sc->stride * sc->height;
+
+    sc->fd = memfd_create("wayoled-screencopy", MFD_CLOEXEC);
+    if (sc->fd < 0 || ftruncate(sc->fd, (off_t)sc->size) < 0) {
+        release_buffer(sc);
+        return -1;
+    }
+
+    sc->pixels = mmap(NULL, sc->size, PROT_READ | PROT_WRITE, MAP_SHARED, sc->fd, 0);
+    if (sc->pixels == MAP_FAILED) {
+        release_buffer(sc);
+        return -1;
+    }
+
+    sc->pool = wl_shm_create_pool(sc->shm, sc->fd, (int32_t)sc->size);
+    sc->buffer = wl_shm_pool_create_buffer(sc->pool, 0, sc->width, sc->height,
+                                            sc->stride, sc->format);
+    if (!sc->buffer) {
+        release_buffer(sc);
+        return -1;
+    }
+
+    sc->need_rebuild = 0;
+    return 0;
+}
+
+static void session_buffer_size(void *data, struct ext_image_copy_capture_session_v1 *s,
+                                 uint32_t width, uint32_t height) {
+    (void)s;
+    screencopy_t *sc = data;
+    if ((int)width != sc->width || (int)height != sc->height) {
+        sc->width = (int)width;
+        sc->height = (int)height;
+        sc->need_rebuild = 1;
+    }
+}
+
+static void session_shm_format(void *data, struct ext_image_copy_capture_session_v1 *s,
+                                uint32_t format) {
+    (void)s;
+    screencopy_t *sc = data;
+    if (!sc->have_format && format_supported(format)) {
+        sc->format = format;
+        sc->have_format = 1;
+        sc->need_rebuild = 1;
+    }
+}
+
+static void session_dmabuf_device(void *data, struct ext_image_copy_capture_session_v1 *s,
+                                   struct wl_array *device) {
+    (void)data; (void)s; (void)device;
+}
+
+static void session_dmabuf_format(void *data, struct ext_image_copy_capture_session_v1 *s,
+                                   uint32_t format, struct wl_array *modifiers) {
+    (void)data; (void)s; (void)format; (void)modifiers;
+}
+
+static void session_done(void *data, struct ext_image_copy_capture_session_v1 *s) {
+    (void)s;
+    screencopy_t *sc = data;
+    sc->constraints_done = 1;
+}
+
+static void session_stopped(void *data, struct ext_image_copy_capture_session_v1 *s) {
+    (void)s;
+    screencopy_t *sc = data;
+    sc->stopped = 1;
+}
+
+static const struct ext_image_copy_capture_session_v1_listener session_listener = {
+    .buffer_size = session_buffer_size,
+    .shm_format = session_shm_format,
+    .dmabuf_device = session_dmabuf_device,
+    .dmabuf_format = session_dmabuf_format,
+    .done = session_done,
+    .stopped = session_stopped,
+};
+
 int screencopy_init(screencopy_t *sc, struct wl_shm *shm,
-                     struct zwlr_screencopy_manager_v1 *manager,
-                     struct wl_output *output) {
+                     struct ext_output_image_capture_source_manager_v1 *source_manager,
+                     struct ext_image_copy_capture_manager_v1 *capture_manager,
+                     struct wl_output *output, struct wl_display *display) {
     memset(sc, 0, sizeof(*sc));
     sc->fd = -1;
     sc->shm = shm;
-    sc->manager = manager;
+    sc->source_manager = source_manager;
+    sc->capture_manager = capture_manager;
     sc->output = output;
 
-    if (!sc->shm || !sc->manager || !sc->output) {
-        fprintf(stderr, "wayoled: missing shm/screencopy-manager/output\n");
+    if (!shm || !source_manager || !capture_manager || !output) {
+        fprintf(stderr, "wayoled: missing shm/image-capture-source/image-copy-capture/output\n");
+        return -1;
+    }
+
+    sc->source = ext_output_image_capture_source_manager_v1_create_source(source_manager, output);
+    sc->session = ext_image_copy_capture_manager_v1_create_session(capture_manager, sc->source, 0);
+    ext_image_copy_capture_session_v1_add_listener(sc->session, &session_listener, sc);
+
+    wl_display_roundtrip(display);
+
+    if (sc->stopped || !sc->constraints_done || !sc->have_format) {
+        fprintf(stderr, "wayoled: image-copy-capture session gave no usable shm format\n");
+        screencopy_destroy(sc);
+        return -1;
+    }
+
+    if (rebuild_buffer(sc) != 0) {
+        fprintf(stderr, "wayoled: failed to allocate capture buffer\n");
+        screencopy_destroy(sc);
         return -1;
     }
 
     return 0;
 }
 
-static void buffer_event(void *data, struct zwlr_screencopy_frame_v1 *frame,
-                          uint32_t format, uint32_t width, uint32_t height,
-                          uint32_t stride) {
+static void frame_transform(void *data, struct ext_image_copy_capture_frame_v1 *f, uint32_t transform) {
+    (void)data; (void)f; (void)transform;
+}
+
+static void frame_damage(void *data, struct ext_image_copy_capture_frame_v1 *f,
+                          int32_t x, int32_t y, int32_t width, int32_t height) {
+    (void)data; (void)f; (void)x; (void)y; (void)width; (void)height;
+}
+
+static void frame_presentation_time(void *data, struct ext_image_copy_capture_frame_v1 *f,
+                                     uint32_t tv_sec_hi, uint32_t tv_sec_lo, uint32_t tv_nsec) {
+    (void)data; (void)f; (void)tv_sec_hi; (void)tv_sec_lo; (void)tv_nsec;
+}
+
+static void frame_ready(void *data, struct ext_image_copy_capture_frame_v1 *f) {
+    (void)f;
     screencopy_t *sc = data;
-
-    sc->width = (int)width;
-    sc->height = (int)height;
-    sc->stride = (int)stride;
-    sc->size = (size_t)stride * height;
-
-    if (sc->pixels && sc->pixels != MAP_FAILED)
-        munmap(sc->pixels, sc->size);
-    if (sc->fd >= 0)
-        close(sc->fd);
-
-    sc->fd = memfd_create("wayoled-screencopy", MFD_CLOEXEC);
-    if (sc->fd < 0 || ftruncate(sc->fd, (off_t)sc->size) < 0) {
-        sc->failed = 1;
-        return;
-    }
-
-    sc->pixels = mmap(NULL, sc->size, PROT_READ | PROT_WRITE, MAP_SHARED, sc->fd, 0);
-    if (sc->pixels == MAP_FAILED) {
-        sc->failed = 1;
-        return;
-    }
-
-    struct wl_shm_pool *pool = wl_shm_create_pool(sc->shm, sc->fd, (int32_t)sc->size);
-    struct wl_buffer *buffer = wl_shm_pool_create_buffer(
-        pool, 0, sc->width, sc->height, sc->stride, format);
-    wl_shm_pool_destroy(pool);
-
-    zwlr_screencopy_frame_v1_copy(frame, buffer);
+    sc->frame_ready = 1;
 }
 
-static void flags_event(void *data, struct zwlr_screencopy_frame_v1 *frame,
-                         uint32_t flags) {
-    (void)data; (void)frame; (void)flags;
-}
-
-static void ready_event(void *data, struct zwlr_screencopy_frame_v1 *frame,
-                         uint32_t tv_sec_hi, uint32_t tv_sec_lo, uint32_t tv_nsec) {
-    (void)frame; (void)tv_sec_hi; (void)tv_sec_lo; (void)tv_nsec;
+static void frame_failed(void *data, struct ext_image_copy_capture_frame_v1 *f, uint32_t reason) {
+    (void)f;
     screencopy_t *sc = data;
-    sc->done = 1;
+    sc->frame_failed = 1;
+    if (reason == EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_BUFFER_CONSTRAINTS)
+        sc->need_rebuild = 1;
+    else if (reason == EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_STOPPED)
+        sc->stopped = 1;
 }
 
-static void failed_event(void *data, struct zwlr_screencopy_frame_v1 *frame) {
-    (void)frame;
-    screencopy_t *sc = data;
-    sc->failed = 1;
-}
-
-static const struct zwlr_screencopy_frame_v1_listener frame_listener = {
-    .buffer = buffer_event,
-    .flags = flags_event,
-    .ready = ready_event,
-    .failed = failed_event,
+static const struct ext_image_copy_capture_frame_v1_listener frame_listener = {
+    .transform = frame_transform,
+    .damage = frame_damage,
+    .presentation_time = frame_presentation_time,
+    .ready = frame_ready,
+    .failed = frame_failed,
 };
 
 int screencopy_capture(screencopy_t *sc, struct wl_display *display) {
-    sc->done = 0;
-    sc->failed = 0;
+    if (sc->stopped)
+        return -1;
 
-    struct zwlr_screencopy_frame_v1 *frame =
-        zwlr_screencopy_manager_v1_capture_output(sc->manager, 0, sc->output);
-    zwlr_screencopy_frame_v1_add_listener(frame, &frame_listener, sc);
+    if (sc->need_rebuild && rebuild_buffer(sc) != 0)
+        return -1;
+    if (!sc->buffer)
+        return -1;
 
-    while (!sc->done && !sc->failed) {
+    sc->frame_ready = 0;
+    sc->frame_failed = 0;
+
+    struct ext_image_copy_capture_frame_v1 *frame =
+        ext_image_copy_capture_session_v1_create_frame(sc->session);
+    ext_image_copy_capture_frame_v1_add_listener(frame, &frame_listener, sc);
+    ext_image_copy_capture_frame_v1_attach_buffer(frame, sc->buffer);
+    ext_image_copy_capture_frame_v1_damage_buffer(frame, 0, 0, sc->width, sc->height);
+    ext_image_copy_capture_frame_v1_capture(frame);
+
+    while (!sc->frame_ready && !sc->frame_failed) {
         if (wl_display_dispatch(display) < 0) {
-            zwlr_screencopy_frame_v1_destroy(frame);
+            ext_image_copy_capture_frame_v1_destroy(frame);
             return -1;
         }
     }
 
-    zwlr_screencopy_frame_v1_destroy(frame);
+    ext_image_copy_capture_frame_v1_destroy(frame);
 
-    if (sc->failed || sc->fd < 0 || sc->size == 0)
+    if (sc->frame_failed || !sc->pixels || sc->size == 0)
         return -1;
 
     return 0;
 }
 
 void screencopy_destroy(screencopy_t *sc) {
-    if (sc->pixels && sc->pixels != MAP_FAILED)
-        munmap(sc->pixels, sc->size);
-    if (sc->fd >= 0)
-        close(sc->fd);
+    release_buffer(sc);
+    if (sc->session) {
+        ext_image_copy_capture_session_v1_destroy(sc->session);
+        sc->session = NULL;
+    }
+    if (sc->source) {
+        ext_image_capture_source_v1_destroy(sc->source);
+        sc->source = NULL;
+    }
 }
 
 uint64_t *screencopy_grid_hashes(screencopy_t *sc, int block_size, int *out_count) {

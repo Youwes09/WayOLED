@@ -201,17 +201,17 @@ int main(int argc, char *argv[]) {
     }
     st.seat = g.seat;
     st.shm = g.shm;
-    st.screencopy_manager = g.screencopy_manager;
+    st.image_source_manager = g.image_source_manager;
+    st.image_copy_manager = g.image_copy_manager;
     st.gamma_manager = g.gamma_manager;
 
     if (!g.seat || !g.idle_notifier) {
         fprintf(stderr, "wayoled: compositor missing wl_seat or ext_idle_notifier_v1\n");
         return 1;
     }
-    if (!g.shm || !g.screencopy_manager) {
-        fprintf(stderr, "wayoled: compositor missing wl_shm or "
-                         "zwlr_screencopy_manager_v1, continuing without "
-                         "static-content risk detection\n");
+    if (!g.shm || !g.image_source_manager || !g.image_copy_manager) {
+        fprintf(stderr, "wayoled: compositor missing wl_shm or ext-image-copy-capture-v1, "
+                         "continuing without static-content risk detection\n");
     }
 
     if (idle_watch_init(&st.idle, g.seat, g.idle_notifier, IDLE_TIMEOUT_MS) != 0)
@@ -223,8 +223,9 @@ int main(int argc, char *argv[]) {
         strncpy(mon->name, g.outputs[i].name, sizeof(mon->name) - 1);
         mon->output = g.outputs[i].output;
 
-        if (g.shm && g.screencopy_manager &&
-            screencopy_init(&mon->screencopy, g.shm, g.screencopy_manager, mon->output) == 0) {
+        if (g.shm && g.image_source_manager && g.image_copy_manager &&
+            screencopy_init(&mon->screencopy, g.shm, g.image_source_manager,
+                            g.image_copy_manager, mon->output, st.display) == 0) {
             mon->screencopy_available = 1;
         }
 
