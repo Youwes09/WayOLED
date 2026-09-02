@@ -27,8 +27,7 @@
           buildInputs = with pkgs; [
             wayland
             wayland-protocols
-            libdrm
-            systemd # provides libudev
+            systemd
           ];
 
           preConfigure = ''
@@ -36,18 +35,13 @@
           '';
 
           mesonFlags = [
-            # Never setuid inside the store; the NixOS module uses
-            # security.wrappers for that instead (see contrib/nixos/module.nix).
             (pkgs.lib.mesonBool "install-setuid-helper" false)
-            # The unit shipped here is for non-NixOS use
-            # (contrib/systemd/wayoled.service); the NixOS module defines
-            # its own systemd.user.services.wayoled instead.
             (pkgs.lib.mesonBool "install-systemd-unit" false)
           ];
 
           meta = with pkgs.lib; {
             description = "OLED care daemon (pixel shift, burn-in mitigation, smooth backlight) for Wayland";
-            license = licenses.mit; # adjust as you like
+            license = licenses.mit;
             platforms = platforms.linux;
           };
         };
@@ -59,30 +53,18 @@
             pkg-config
             wayland-scanner
             gdb
-            clang-tools # clangd for LSP, clang-format
+            clang-tools
           ];
 
           buildInputs = with pkgs; [
             wayland
             wayland-protocols
-            libdrm
             systemd
           ];
         };
       }) // {
         nixosModules.default = import ./contrib/nixos/module.nix self;
 
-        # Full-stack integration test: boots a real NixOS VM, enables the
-        # module, and drives it through systemd/udev/IPC end-to-end.
-        # Run with: nix flake check   (or: nix build .#checks.x86_64-linux.vmTest -L)
-        #
-        # LIMITS: this uses sway with WLR_BACKEND=headless, so wl_display_connect
-        # succeeds and the wlr protocols (screencopy/gamma-control/layer-shell)
-        # exist and can be exercised programmatically -- but nothing is actually
-        # rendered to a GPU/display, so this cannot verify real pixel dimming
-        # or color-temperature changes are visually correct. It verifies wiring:
-        # service starts, udev grants backlight access, generated profile
-        # values are read, and IPC round-trips.
         checks = nixpkgs.lib.genAttrs
           (builtins.filter (s: nixpkgs.lib.hasSuffix "linux" s) flake-utils.lib.defaultSystems)
           (system:
@@ -109,8 +91,6 @@
                     password = "";
                   };
 
-                  # Headless wlroots compositor so wl_display_connect has
-                  # something real to talk to inside the VM.
                   programs.sway.enable = true;
                   services.getty.autologinUser = "alice";
                   programs.bash.loginShellInit = ''
@@ -118,17 +98,6 @@
                       WLR_BACKEND=headless WLR_LIBINPUT_NO_DEVICES=1 exec sway
                     fi
                   '';
-
-                  # NOTE: VMs have no real /sys/class/backlight/* device, and
-                  # unlike userspace paths you cannot fake one with tmpfiles.d
-                  # (/sys is a kernel-managed virtual filesystem). So this test
-                  # exercises the path where backlight_detect() finds nothing
-                  # and wayoled logs "continuing without backlight control" --
-                  # that's a real, already-handled code path, just not the one
-                  # you actually care about for brightness control. Verifying
-                  # real backlight writes needs a physical machine or a kernel
-                  # test harness that can register a fake backlight class
-                  # device (out of scope here).
 
                   virtualisation.memorySize = 1024;
                 };

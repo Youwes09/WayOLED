@@ -5,6 +5,38 @@
 #include <string.h>
 #include <dirent.h>
 
+static void parse_monitor_list(wayoled_profile_t *out, const char *value) {
+    out->monitor_count = 0;
+    if (strcmp(value, "all") == 0)
+        return;
+
+    char buf[256];
+    strncpy(buf, value, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char *tok = strtok(buf, ",");
+    while (tok && out->monitor_count < CONFIG_MONITOR_LIST_MAX) {
+        strncpy(out->monitors[out->monitor_count], tok, WAYOLED_MONITOR_NAME_MAX - 1);
+        out->monitors[out->monitor_count][WAYOLED_MONITOR_NAME_MAX - 1] = '\0';
+        out->monitor_count++;
+        tok = strtok(NULL, ",");
+    }
+}
+
+static void parse_gamma(wayoled_profile_t *out, const char *value) {
+    double r, g, b;
+    int n = sscanf(value, "%lf:%lf:%lf", &r, &g, &b);
+    if (n == 1)
+        g = b = r;
+    else if (n != 3)
+        return;
+    if (r < 0.1 || r > 10.0 || g < 0.1 || g > 10.0 || b < 0.1 || b > 10.0)
+        return;
+    out->gamma_r = r;
+    out->gamma_g = g;
+    out->gamma_b = b;
+}
+
 static void parse_profile_file(FILE *f, wayoled_profile_t *out) {
     char line[128];
 
@@ -30,6 +62,10 @@ static void parse_profile_file(FILE *f, wayoled_profile_t *out) {
             out->day_temp = atoi(value);
         else if (strcmp(key, "night_temp") == 0)
             out->night_temp = atoi(value);
+        else if (strcmp(key, "gamma") == 0)
+            parse_gamma(out, value);
+        else if (strcmp(key, "monitor") == 0)
+            parse_monitor_list(out, value);
     }
 }
 
@@ -43,6 +79,9 @@ void config_default_profile(wayoled_profile_t *out) {
     out->colortemp_enabled = 1;
     out->day_temp = 6500;
     out->night_temp = 3400;
+    out->gamma_r = 1.0;
+    out->gamma_g = 1.0;
+    out->gamma_b = 1.0;
 }
 
 int config_load_profile(const char *name, wayoled_profile_t *out) {
@@ -104,8 +143,7 @@ static int scan_dir(const char *dir, char out_names[][CONFIG_PROFILE_NAME_MAX], 
         name[namelen] = '\0';
 
         if (!list_has(out_names, count, name)) {
-            strncpy(out_names[count], name, CONFIG_PROFILE_NAME_MAX - 1);
-            out_names[count][CONFIG_PROFILE_NAME_MAX - 1] = '\0';
+            snprintf(out_names[count], CONFIG_PROFILE_NAME_MAX, "%s", name);
             count++;
         }
     }

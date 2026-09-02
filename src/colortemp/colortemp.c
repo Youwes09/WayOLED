@@ -60,20 +60,20 @@ static int target_kelvin(int hour, int minute, int day_temp, int night_temp) {
     return night_temp + (int)((day_temp - night_temp) * progress);
 }
 
-void colortemp_tick(wayoled_state_t *st) {
-    if (!st->colortemp_enabled || !st->dimmer.available)
+void colortemp_tick(wayoled_monitor_t *mon) {
+    if (!mon->colortemp_enabled || !mon->dimmer.available)
         return;
 
     time_t now = time(NULL);
     struct tm local;
     localtime_r(&now, &local);
 
-    int kelvin = target_kelvin(local.tm_hour, local.tm_min, st->day_temp, st->night_temp);
-    if (kelvin == st->colortemp_kelvin)
+    int kelvin = target_kelvin(local.tm_hour, local.tm_min, mon->day_temp, mon->night_temp);
+    if (kelvin == mon->colortemp_kelvin)
         return;
 
     double r, g, b;
     colortemp_kelvin_to_rgb(kelvin, &r, &g, &b);
-    dimmer_set_colortemp(&st->dimmer, r, g, b);
-    st->colortemp_kelvin = kelvin;
+    dimmer_set_colortemp(&mon->dimmer, r, g, b);
+    mon->colortemp_kelvin = kelvin;
 }

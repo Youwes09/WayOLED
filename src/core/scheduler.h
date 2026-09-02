@@ -3,13 +3,14 @@
 
 #include "config.h"
 
-#define SCHEDULER_MAX_ENTRIES 16
+#define SCHEDULER_MAX_ENTRIES 32
 #define SCHEDULER_FILE "/etc/wayoled/schedule.conf"
 
 typedef struct {
     int hour;
     int minute;
     char profile[CONFIG_PROFILE_NAME_MAX];
+    char monitor[WAYOLED_MONITOR_NAME_MAX];
 } schedule_entry_t;
 
 typedef struct {
@@ -18,6 +19,6 @@ typedef struct {
 } scheduler_t;
 
 int scheduler_load(scheduler_t *sch);
-const char *scheduler_profile_for_time(scheduler_t *sch, int hour, int minute);
+const char *scheduler_profile_for_time(scheduler_t *sch, int hour, int minute, const char *monitor);
 
 #endif

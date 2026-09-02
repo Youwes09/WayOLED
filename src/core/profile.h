@@ -3,6 +3,6 @@
 
 #include "state.h"
 
-int profile_apply(wayoled_state_t *st, const char *name);
+int profile_apply(wayoled_monitor_t *mon, const char *name);
 
 #endif

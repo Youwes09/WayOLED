@@ -10,14 +10,12 @@ typedef struct {
 
     int width;
     int height;
-
-    // 0 = awaiting initial configure, 1 = configured, -1 = compositor closed it
     int configured;
 } overlay_t;
 
 int overlay_create(struct wl_display *display, struct wl_compositor *compositor,
-                    struct zwlr_layer_shell_v1 *layer_shell, const char *namespace,
-                    overlay_t *ov);
+                    struct zwlr_layer_shell_v1 *layer_shell, struct wl_output *output,
+                    const char *namespace, overlay_t *ov);
 
 void overlay_destroy(overlay_t *ov);
 

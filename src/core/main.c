@@ -63,70 +63,80 @@ static void arm_timer(int fd, int interval_ms) {
 
 static void drain_timer(int fd) {
     uint64_t expirations;
-    read(fd, &expirations, sizeof(expirations));
+    if (read(fd, &expirations, sizeof(expirations)) < 0)
+        return;
 }
 
-static void check_static_content(wayoled_state_t *st) {
-    if (!st->screencopy_available)
+static void check_static_content(wayoled_state_t *st, wayoled_monitor_t *mon) {
+    if (!mon->screencopy_available)
         return;
 
-    if (screencopy_capture(&st->screencopy, st->display) != 0)
+    if (screencopy_capture(&mon->screencopy, st->display) != 0)
         return;
 
     int count = 0;
-    uint64_t *hashes = screencopy_grid_hashes(&st->screencopy, GRID_BLOCK_SIZE, &count);
+    uint64_t *hashes = screencopy_grid_hashes(&mon->screencopy, GRID_BLOCK_SIZE, &count);
     if (!hashes)
         return;
 
-    if (st->last_hashes && count == st->last_hash_count) {
-        double diff_ratio = screencopy_grid_diff_ratio(st->last_hashes, hashes, count);
-        st->static_count = (diff_ratio <= MAX_DIFF_RATIO) ? st->static_count + 1 : 0;
+    if (mon->last_hashes && count == mon->last_hash_count) {
+        double diff_ratio = screencopy_grid_diff_ratio(mon->last_hashes, hashes, count);
+        mon->static_count = (diff_ratio <= MAX_DIFF_RATIO) ? mon->static_count + 1 : 0;
     }
 
-    free(st->last_hashes);
-    st->last_hashes = hashes;
-    st->last_hash_count = count;
+    free(mon->last_hashes);
+    mon->last_hashes = hashes;
+    mon->last_hash_count = count;
 
-    if (!st->manual_override && !st->paused && st->risk_monitor_enabled) {
-        int risk = (st->static_count >= st->static_threshold_polls) && st->idle.is_idle;
-        if (risk && !st->dimmed && st->dimmer.available) {
-            fprintf(stderr, "wayoled: static content + idle detected, dimming\n");
-            dimmer_transition(&st->dimmer, st->display, 1.0, st->dim_factor, 20, 15000);
-            st->dimmed = 1;
+    if (!mon->manual_override && !st->paused && mon->risk_monitor_enabled) {
+        int risk = (mon->static_count >= mon->static_threshold_polls) && st->idle.is_idle;
+        if (risk && !mon->dimmed && mon->dimmer.available) {
+            fprintf(stderr, "wayoled: %s static content + idle detected, dimming\n", mon->name);
+            dimmer_transition(&mon->dimmer, st->display, 1.0, mon->dim_factor, 20, 15000);
+            mon->dimmed = 1;
         }
     }
 }
 
 static void reap_refresh(wayoled_state_t *st) {
-    if (!st->refresh_in_progress)
-        return;
+    for (int i = 0; i < st->monitor_count; i++) {
+        wayoled_monitor_t *mon = &st->monitors[i];
+        if (!mon->refresh_in_progress)
+            continue;
 
-    int status = 0;
-    pid_t r = waitpid(st->refresh_pid, &status, WNOHANG);
-    if (r != st->refresh_pid)
-        return;
+        int status = 0;
+        pid_t r = waitpid(mon->refresh_pid, &status, WNOHANG);
+        if (r != mon->refresh_pid)
+            continue;
 
-    st->refresh_in_progress = 0;
+        mon->refresh_in_progress = 0;
 
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 2)
-        fprintf(stderr, "wayoled: refresh cycle cancelled\n");
-    else if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        fprintf(stderr, "wayoled: refresh cycle finished\n");
-    else
-        fprintf(stderr, "wayoled: refresh cycle failed\n");
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 2)
+            fprintf(stderr, "wayoled: %s refresh cycle cancelled\n", mon->name);
+        else if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+            fprintf(stderr, "wayoled: %s refresh cycle finished\n", mon->name);
+        else
+            fprintf(stderr, "wayoled: %s refresh cycle failed\n", mon->name);
+    }
 }
 
 static void check_schedule(wayoled_state_t *st) {
-    if (st->profile_pinned || st->scheduler.count == 0)
+    if (st->scheduler.count == 0)
         return;
 
     time_t now = time(NULL);
     struct tm local;
     localtime_r(&now, &local);
 
-    const char *target = scheduler_profile_for_time(&st->scheduler, local.tm_hour, local.tm_min);
-    if (target && strcmp(target, st->profile) != 0)
-        profile_apply(st, target);
+    for (int i = 0; i < st->monitor_count; i++) {
+        wayoled_monitor_t *mon = &st->monitors[i];
+        if (mon->profile_pinned)
+            continue;
+
+        const char *target = scheduler_profile_for_time(&st->scheduler, local.tm_hour, local.tm_min, mon->name);
+        if (target && strcmp(target, mon->profile) != 0)
+            profile_apply(mon, target);
+    }
 }
 
 static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_schedule,
@@ -136,12 +146,17 @@ static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_sch
 
     reap_refresh(st);
 
-    if (*was_idle && !st->idle.is_idle && st->dimmed && st->dimmer.available) {
-        fprintf(stderr, "wayoled: activity detected, restoring immediately\n");
-        dimmer_transition(&st->dimmer, st->display, st->dim_factor, 1.0, 20, 15000);
-        st->dimmed = 0;
-        st->manual_override = 0;
-        st->static_count = 0;
+    if (*was_idle && !st->idle.is_idle) {
+        for (int i = 0; i < st->monitor_count; i++) {
+            wayoled_monitor_t *mon = &st->monitors[i];
+            if (!mon->dimmed || !mon->dimmer.available)
+                continue;
+            fprintf(stderr, "wayoled: activity detected, restoring %s\n", mon->name);
+            dimmer_transition(&mon->dimmer, st->display, mon->dim_factor, 1.0, 20, 15000);
+            mon->dimmed = 0;
+            mon->manual_override = 0;
+            mon->static_count = 0;
+        }
     }
     *was_idle = st->idle.is_idle;
 
@@ -149,7 +164,8 @@ static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_sch
     if (*ms_since_static >= STATIC_CHECK_INTERVAL_MS) {
         *ms_since_static = 0;
         if (!st->paused)
-            check_static_content(st);
+            for (int i = 0; i < st->monitor_count; i++)
+                check_static_content(st, &st->monitors[i]);
     }
 
     *ms_since_schedule += TICK_MS;
@@ -161,37 +177,35 @@ static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_sch
     *ms_since_colortemp += TICK_MS;
     if (*ms_since_colortemp >= COLORTEMP_CHECK_INTERVAL_MS) {
         *ms_since_colortemp = 0;
-        colortemp_tick(st);
+        for (int i = 0; i < st->monitor_count; i++)
+            colortemp_tick(&st->monitors[i]);
     }
 }
 
 int main(int argc, char *argv[]) {
     if (argc > 1 && strcmp(argv[1], "--refresh") == 0)
-        return refresh_cycle_run() == 0 ? 0 : 1;
+        return refresh_cycle_run(argc > 2 ? argv[2] : NULL) == 0 ? 0 : 1;
 
     wayoled_state_t st = {0};
     st.ipc.client_fd = -1;
     st.bl_watcher.inotify_fd = -1;
 
-    profile_apply(&st, "default");
     scheduler_load(&st.scheduler);
 
     st.display = connect_with_retry();
 
     wayland_globals_t g;
-    wayland_globals_bind(st.display, &g);
+    if (wayland_globals_bind(st.display, &g) != 0) {
+        fprintf(stderr, "wayoled: compositor missing wl_output\n");
+        return 1;
+    }
     st.seat = g.seat;
     st.shm = g.shm;
-    st.output = g.output;
     st.screencopy_manager = g.screencopy_manager;
     st.gamma_manager = g.gamma_manager;
 
     if (!g.seat || !g.idle_notifier) {
         fprintf(stderr, "wayoled: compositor missing wl_seat or ext_idle_notifier_v1\n");
-        return 1;
-    }
-    if (!g.output) {
-        fprintf(stderr, "wayoled: compositor missing wl_output\n");
         return 1;
     }
     if (!g.shm || !g.screencopy_manager) {
@@ -203,15 +217,22 @@ int main(int argc, char *argv[]) {
     if (idle_watch_init(&st.idle, g.seat, g.idle_notifier, IDLE_TIMEOUT_MS) != 0)
         return 1;
 
-    if (g.shm && g.screencopy_manager &&
-        screencopy_init(&st.screencopy, g.shm, g.screencopy_manager, g.output) == 0) {
-        st.screencopy_available = 1;
-    } else {
-        st.screencopy_available = 0;
-    }
+    st.monitor_count = g.output_count;
+    for (int i = 0; i < g.output_count; i++) {
+        wayoled_monitor_t *mon = &st.monitors[i];
+        strncpy(mon->name, g.outputs[i].name, sizeof(mon->name) - 1);
+        mon->output = g.outputs[i].output;
 
-    if (dimmer_init(&st.dimmer, g.gamma_manager, g.output) == 0)
-        dimmer_confirm(&st.dimmer, st.display);
+        if (g.shm && g.screencopy_manager &&
+            screencopy_init(&mon->screencopy, g.shm, g.screencopy_manager, mon->output) == 0) {
+            mon->screencopy_available = 1;
+        }
+
+        if (dimmer_init(&mon->dimmer, g.gamma_manager, mon->output) == 0)
+            dimmer_confirm(&mon->dimmer, st.display);
+
+        profile_apply(mon, "default");
+    }
 
     if (backlight_detect(&st.backlight) == 0) {
         st.backlight_available = 1;
@@ -234,15 +255,16 @@ int main(int argc, char *argv[]) {
     int timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     arm_timer(timer_fd, TICK_MS);
 
-    fprintf(stderr, "wayoled: daemon started (backlight=%s profile=%s)\n",
-        st.backlight_available ? st.backlight.brightness_path : "unavailable", st.profile);
+    fprintf(stderr, "wayoled: daemon started (backlight=%s monitors=%d)\n",
+        st.backlight_available ? st.backlight.brightness_path : "unavailable", st.monitor_count);
 
     int ms_since_static = 0;
     int ms_since_schedule = 0;
     int ms_since_colortemp = 0;
     int was_idle = 0;
 
-    colortemp_tick(&st);
+    for (int i = 0; i < st.monitor_count; i++)
+        colortemp_tick(&st.monitors[i]);
 
     for (;;) {
         wl_display_flush(st.display);
@@ -276,11 +298,14 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    free(st.last_hashes);
-    dimmer_destroy(&st.dimmer);
+    for (int i = 0; i < st.monitor_count; i++) {
+        wayoled_monitor_t *mon = &st.monitors[i];
+        free(mon->last_hashes);
+        dimmer_destroy(&mon->dimmer);
+        if (mon->screencopy_available)
+            screencopy_destroy(&mon->screencopy);
+    }
     ipc_server_destroy(&st.ipc);
-    if (st.screencopy_available)
-        screencopy_destroy(&st.screencopy);
     idle_watch_destroy(&st.idle);
     if (st.backlight_available) {
         watcher_close(&st.bl_watcher);

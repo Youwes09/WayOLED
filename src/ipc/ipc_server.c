@@ -93,7 +93,8 @@ void ipc_server_respond(ipc_server_t *srv, const char *response) {
     if (srv->client_fd < 0)
         return;
 
-    write(srv->client_fd, response, strlen(response));
+    if (write(srv->client_fd, response, strlen(response)) < 0)
+        fprintf(stderr, "wayoled: IPC response write failed: %s\n", strerror(errno));
     close(srv->client_fd);
     srv->client_fd = -1;
 }

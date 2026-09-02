@@ -26,13 +26,13 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 };
 
 int overlay_create(struct wl_display *display, struct wl_compositor *compositor,
-                    struct zwlr_layer_shell_v1 *layer_shell, const char *namespace,
-                    overlay_t *ov) {
+                    struct zwlr_layer_shell_v1 *layer_shell, struct wl_output *output,
+                    const char *namespace, overlay_t *ov) {
     memset(ov, 0, sizeof(*ov));
 
     ov->surface = wl_compositor_create_surface(compositor);
     ov->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        layer_shell, ov->surface, NULL, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, namespace);
+        layer_shell, ov->surface, output, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, namespace);
 
     zwlr_layer_surface_v1_add_listener(ov->layer_surface, &layer_surface_listener, ov);
 

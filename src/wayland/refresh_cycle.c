@@ -18,6 +18,8 @@
 
 #define SEC_PER_COLOR 3
 #define BAR_HEIGHT_PX 6
+#define REFRESH_MAX_OUTPUTS 8
+#define REFRESH_OUTPUT_NAME_MAX 32
 
 static volatile sig_atomic_t g_stop_requested = 0;
 
@@ -29,14 +31,19 @@ static void handle_sigterm(int signum) {
 typedef struct { uint8_t r, g, b; } rgb_t;
 
 static const rgb_t sequence[] = {
-    {255, 255, 255}, // white
-    {128, 128, 128}, // 50% gray
-    {0,   0,   0},   // black
-    {255, 0,   0},   // red
-    {0,   255, 0},   // green
-    {0,   0,   255}, // blue
+    {255, 255, 255},
+    {128, 128, 128},
+    {0,   0,   0},
+    {255, 0,   0},
+    {0,   255, 0},
+    {0,   0,   255},
 };
 #define SEQ_LEN (sizeof(sequence) / sizeof(sequence[0]))
+
+typedef struct {
+    struct wl_output *output;
+    char name[REFRESH_OUTPUT_NAME_MAX];
+} refresh_output_t;
 
 typedef struct {
     struct wl_display *display;
@@ -44,6 +51,9 @@ typedef struct {
     struct wl_compositor *compositor;
     struct wl_shm *shm;
     struct zwlr_layer_shell_v1 *layer_shell;
+
+    refresh_output_t outputs[REFRESH_MAX_OUTPUTS];
+    int output_count;
 
     overlay_t overlay;
 
@@ -54,11 +64,50 @@ typedef struct {
     size_t buf_size;
 } state_t;
 
+static void output_name(void *data, struct wl_output *wl_output, const char *name) {
+    (void)wl_output;
+    refresh_output_t *o = data;
+    strncpy(o->name, name, REFRESH_OUTPUT_NAME_MAX - 1);
+    o->name[REFRESH_OUTPUT_NAME_MAX - 1] = '\0';
+}
+
+static void output_geometry(void *data, struct wl_output *wl_output, int32_t x, int32_t y,
+                             int32_t w, int32_t h, int32_t subpixel, const char *make,
+                             const char *model, int32_t transform) {
+    (void)data; (void)wl_output; (void)x; (void)y; (void)w; (void)h;
+    (void)subpixel; (void)make; (void)model; (void)transform;
+}
+
+static void output_mode(void *data, struct wl_output *wl_output, uint32_t flags,
+                         int32_t w, int32_t h, int32_t refresh) {
+    (void)data; (void)wl_output; (void)flags; (void)w; (void)h; (void)refresh;
+}
+
+static void output_done(void *data, struct wl_output *wl_output) {
+    (void)data; (void)wl_output;
+}
+
+static void output_scale(void *data, struct wl_output *wl_output, int32_t factor) {
+    (void)data; (void)wl_output; (void)factor;
+}
+
+static void output_description(void *data, struct wl_output *wl_output, const char *description) {
+    (void)data; (void)wl_output; (void)description;
+}
+
+static const struct wl_output_listener output_listener = {
+    .geometry = output_geometry,
+    .mode = output_mode,
+    .done = output_done,
+    .scale = output_scale,
+    .name = output_name,
+    .description = output_description,
+};
+
 static void registry_global(void *data, struct wl_registry *registry,
                              uint32_t name, const char *interface,
                              uint32_t version) {
     state_t *st = data;
-    (void)version;
 
     if (strcmp(interface, wl_compositor_interface.name) == 0) {
         st->compositor = wl_registry_bind(registry, name,
@@ -68,6 +117,14 @@ static void registry_global(void *data, struct wl_registry *registry,
     } else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         st->layer_shell = wl_registry_bind(registry, name,
                                             &zwlr_layer_shell_v1_interface, 1);
+    } else if (strcmp(interface, wl_output_interface.name) == 0) {
+        if (st->output_count < REFRESH_MAX_OUTPUTS) {
+            uint32_t bind_ver = version < 4 ? version : 4;
+            refresh_output_t *o = &st->outputs[st->output_count++];
+            o->output = wl_registry_bind(registry, name, &wl_output_interface, bind_ver);
+            snprintf(o->name, REFRESH_OUTPUT_NAME_MAX, "output-%d", st->output_count - 1);
+            wl_output_add_listener(o->output, &output_listener, o);
+        }
     }
 }
 
@@ -80,6 +137,14 @@ static const struct wl_registry_listener registry_listener = {
     .global = registry_global,
     .global_remove = registry_global_remove,
 };
+
+static struct wl_output *find_output(state_t *st, const char *name) {
+    for (int i = 0; i < st->output_count; i++) {
+        if (strcmp(st->outputs[i].name, name) == 0)
+            return st->outputs[i].output;
+    }
+    return NULL;
+}
 
 static int create_shm_buffer(state_t *st) {
     st->buf_size = (size_t)st->overlay.width * st->overlay.height * 4;
@@ -149,7 +214,7 @@ static void paint_frame(state_t *st, rgb_t color, double progress) {
     wl_surface_commit(st->overlay.surface);
 }
 
-int refresh_cycle_run(void) {
+int refresh_cycle_run(const char *monitor_name) {
     struct sigaction sa = {0};
     sa.sa_handler = handle_sigterm;
     sigaction(SIGTERM, &sa, NULL);
@@ -166,15 +231,27 @@ int refresh_cycle_run(void) {
     st.registry = wl_display_get_registry(st.display);
     wl_registry_add_listener(st.registry, &registry_listener, &st);
     wl_display_roundtrip(st.display);
+    wl_display_roundtrip(st.display);
 
     if (!st.compositor || !st.shm || !st.layer_shell) {
         fprintf(stderr, "wayoled: compositor missing required globals "
                          "(compositor=%p shm=%p layer_shell=%p)\n",
                 (void *)st.compositor, (void *)st.shm, (void *)st.layer_shell);
+        wl_display_disconnect(st.display);
         return -1;
     }
 
-    if (overlay_create(st.display, st.compositor, st.layer_shell, "wayoled-refresh", &st.overlay) != 0) {
+    struct wl_output *target = NULL;
+    if (monitor_name && monitor_name[0]) {
+        target = find_output(&st, monitor_name);
+        if (!target) {
+            fprintf(stderr, "wayoled: unknown monitor '%s'\n", monitor_name);
+            wl_display_disconnect(st.display);
+            return -1;
+        }
+    }
+
+    if (overlay_create(st.display, st.compositor, st.layer_shell, target, "wayoled-refresh", &st.overlay) != 0) {
         wl_display_disconnect(st.display);
         return -1;
     }
@@ -185,7 +262,8 @@ int refresh_cycle_run(void) {
         return -1;
     }
 
-    fprintf(stderr, "wayoled: starting pixel-refresh cycle (%dx%d)\n",
+    fprintf(stderr, "wayoled: starting pixel-refresh cycle on %s (%dx%d)\n",
+            monitor_name && monitor_name[0] ? monitor_name : "default",
             st.overlay.width, st.overlay.height);
 
     for (size_t i = 0; i < SEQ_LEN; i++) {
@@ -206,7 +284,7 @@ int refresh_cycle_run(void) {
             paint_frame(&st, sequence[i], overall_progress);
             wl_display_flush(st.display);
 
-            usleep(16667); // ~60Hz
+            usleep(16667);
             wl_display_dispatch_pending(st.display);
 
             if (st.overlay.configured < 0) {

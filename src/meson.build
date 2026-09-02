@@ -5,6 +5,7 @@ wayoled_sources = files(
   'core/dimmer.c',
   'core/wayland_globals.c',
   'core/profile.c',
+  'core/monitor.c',
   'backlight/backlight.c',
   'backlight/inotify_watch.c',
   'colortemp/colortemp.c',
@@ -12,16 +13,14 @@ wayoled_sources = files(
   'wayland/screencopy.c',
   'wayland/layer_shell_overlay.c',
   'wayland/refresh_cycle.c',
-  'drm/kms_pan.c',
-  'drm/gamma_lut.c',
   'ipc/ipc_server.c',
   'ipc/ipc_commands.c',
 )
 
 wayoled_deps = [
   wayland_client,
-  libdrm,
   libudev,
+  libm,
 ]
 
 executable('wayoled',

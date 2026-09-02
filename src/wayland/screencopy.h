@@ -28,8 +28,6 @@ void screencopy_destroy(screencopy_t *sc);
 
 uint64_t *screencopy_grid_hashes(screencopy_t *sc, int block_size, int *out_count);
 
-// Compares two grid-hash arrays of equal length, returns the fraction
-// (0.0-1.0) of blocks that differ.
 double screencopy_grid_diff_ratio(const uint64_t *a, const uint64_t *b, int count);
 
 #endif

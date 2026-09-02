@@ -6,13 +6,22 @@
 #include "wlr-gamma-control-unstable-v1-client-protocol.h"
 #include "ext-idle-notify-v1-client-protocol.h"
 
+#define WAYOLED_MAX_MONITORS 8
+#define WAYOLED_MONITOR_NAME_MAX 32
+
+typedef struct {
+    struct wl_output *output;
+    char name[WAYOLED_MONITOR_NAME_MAX];
+} wayoled_global_output_t;
+
 typedef struct {
     struct wl_seat *seat;
     struct wl_shm *shm;
-    struct wl_output *output;
     struct ext_idle_notifier_v1 *idle_notifier;
     struct zwlr_screencopy_manager_v1 *screencopy_manager;
     struct zwlr_gamma_control_manager_v1 *gamma_manager;
+    wayoled_global_output_t outputs[WAYOLED_MAX_MONITORS];
+    int output_count;
 } wayland_globals_t;
 
 int wayland_globals_bind(struct wl_display *display, wayland_globals_t *g);

@@ -17,7 +17,9 @@ int scheduler_load(scheduler_t *sch) {
 
         int hour, minute;
         char name[CONFIG_PROFILE_NAME_MAX];
-        if (sscanf(line, "%d:%d %31s", &hour, &minute, name) != 3)
+        char monitor[WAYOLED_MONITOR_NAME_MAX] = {0};
+        int n = sscanf(line, "%d:%d %31s %31s", &hour, &minute, name, monitor);
+        if (n < 3)
             continue;
         if (hour < 0 || hour > 23 || minute < 0 || minute > 59)
             continue;
@@ -25,8 +27,8 @@ int scheduler_load(scheduler_t *sch) {
         schedule_entry_t *e = &sch->entries[sch->count++];
         e->hour = hour;
         e->minute = minute;
-        strncpy(e->profile, name, sizeof(e->profile) - 1);
-        e->profile[sizeof(e->profile) - 1] = '\0';
+        snprintf(e->profile, sizeof(e->profile), "%s", name);
+        snprintf(e->monitor, sizeof(e->monitor), "%s", monitor);
     }
 
     fclose(f);
@@ -46,17 +48,26 @@ int scheduler_load(scheduler_t *sch) {
     return sch->count > 0 ? 0 : -1;
 }
 
-const char *scheduler_profile_for_time(scheduler_t *sch, int hour, int minute) {
-    if (sch->count == 0)
+const char *scheduler_profile_for_time(scheduler_t *sch, int hour, int minute, const char *monitor) {
+    const schedule_entry_t *match[SCHEDULER_MAX_ENTRIES];
+    int count = 0;
+
+    for (int i = 0; i < sch->count; i++) {
+        if (sch->entries[i].monitor[0] && strcmp(sch->entries[i].monitor, monitor) != 0)
+            continue;
+        match[count++] = &sch->entries[i];
+    }
+
+    if (count == 0)
         return NULL;
 
     int now = hour * 60 + minute;
-    const char *result = sch->entries[sch->count - 1].profile;
+    const char *result = match[count - 1]->profile;
 
-    for (int i = 0; i < sch->count; i++) {
-        int t = sch->entries[i].hour * 60 + sch->entries[i].minute;
+    for (int i = 0; i < count; i++) {
+        int t = match[i]->hour * 60 + match[i]->minute;
         if (t <= now)
-            result = sch->entries[i].profile;
+            result = match[i]->profile;
         else
             break;
     }

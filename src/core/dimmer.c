@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <math.h>
 #include <sys/mman.h>
 
 static void gamma_size_event(void *data, struct zwlr_gamma_control_v1 *gc, uint32_t size) {
@@ -32,6 +33,9 @@ int dimmer_init(dimmer_t *dm, struct zwlr_gamma_control_manager_v1 *manager, str
     dm->temp_r = 1.0;
     dm->temp_g = 1.0;
     dm->temp_b = 1.0;
+    dm->gamma_r = 1.0;
+    dm->gamma_g = 1.0;
+    dm->gamma_b = 1.0;
 
     if (!manager) {
         fprintf(stderr, "wayoled: gamma-control unavailable, dimming disabled\n");
@@ -76,11 +80,16 @@ void dimmer_render(dimmer_t *dm) {
     if (gf > 1.0) gf = 1.0;
     if (bf > 1.0) bf = 1.0;
 
+    double inv_r = 1.0 / dm->gamma_r;
+    double inv_g = 1.0 / dm->gamma_g;
+    double inv_b = 1.0 / dm->gamma_b;
+    double last = (double)(dm->ramp_size - 1);
+
     for (uint32_t i = 0; i < dm->ramp_size; i++) {
-        double base = (double)i * 65535.0 / (double)(dm->ramp_size - 1);
-        table[i] = (uint16_t)(base * rf);
-        table[dm->ramp_size + i] = (uint16_t)(base * gf);
-        table[2 * dm->ramp_size + i] = (uint16_t)(base * bf);
+        double norm = (double)i / last;
+        table[i] = (uint16_t)(pow(norm, inv_r) * rf * 65535.0);
+        table[dm->ramp_size + i] = (uint16_t)(pow(norm, inv_g) * gf * 65535.0);
+        table[2 * dm->ramp_size + i] = (uint16_t)(pow(norm, inv_b) * bf * 65535.0);
     }
 
     int fd = memfd_create("wayoled-gamma", MFD_CLOEXEC);
@@ -89,8 +98,12 @@ void dimmer_render(dimmer_t *dm) {
         return;
     }
 
-    ftruncate(fd, (off_t)table_size);
-    write(fd, table, table_size);
+    if (ftruncate(fd, (off_t)table_size) < 0 ||
+        write(fd, table, table_size) != (ssize_t)table_size) {
+        close(fd);
+        free(table);
+        return;
+    }
     lseek(fd, 0, SEEK_SET);
 
     zwlr_gamma_control_v1_set_gamma(dm->control, fd);
@@ -115,6 +128,13 @@ void dimmer_set_colortemp(dimmer_t *dm, double r, double g, double b) {
     dm->temp_r = r;
     dm->temp_g = g;
     dm->temp_b = b;
+    dimmer_render(dm);
+}
+
+void dimmer_set_gamma(dimmer_t *dm, double r, double g, double b) {
+    dm->gamma_r = r;
+    dm->gamma_g = g;
+    dm->gamma_b = b;
     dimmer_render(dm);
 }
 

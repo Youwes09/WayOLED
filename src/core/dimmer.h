@@ -16,6 +16,9 @@ typedef struct {
     double temp_r;
     double temp_g;
     double temp_b;
+    double gamma_r;
+    double gamma_g;
+    double gamma_b;
 } dimmer_t;
 
 int dimmer_init(dimmer_t *dm, struct zwlr_gamma_control_manager_v1 *manager, struct wl_output *output);
@@ -23,6 +26,7 @@ int dimmer_confirm(dimmer_t *dm, struct wl_display *display);
 void dimmer_render(dimmer_t *dm);
 void dimmer_transition(dimmer_t *dm, struct wl_display *display, double from, double to, int steps, int step_us);
 void dimmer_set_colortemp(dimmer_t *dm, double r, double g, double b);
+void dimmer_set_gamma(dimmer_t *dm, double r, double g, double b);
 void dimmer_destroy(dimmer_t *dm);
 
 #endif
