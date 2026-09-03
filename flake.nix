@@ -95,7 +95,7 @@
                   services.getty.autologinUser = "alice";
                   programs.bash.loginShellInit = ''
                     if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-                      WLR_BACKEND=headless WLR_LIBINPUT_NO_DEVICES=1 exec sway
+                      WLR_BACKEND=headless WLR_HEADLESS_OUTPUTS=1 WLR_LIBINPUT_NO_DEVICES=1 exec sway
                     fi
                   '';
 
@@ -131,6 +131,11 @@
                       )
 
                   with subtest("oledctl round-trips over the real IPC socket"):
+                      machine.wait_until_succeeds(
+                          "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 "
+                          "test -S /tmp/wayoled.sock'",
+                          timeout=60,
+                      )
                       status = machine.succeed(
                           "su - alice -c 'XDG_RUNTIME_DIR=/run/user/1000 "
                           "/run/current-system/sw/bin/oledctl status'"

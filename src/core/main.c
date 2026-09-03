@@ -256,10 +256,8 @@ int main(int argc, char *argv[]) {
         return 1;
 
     monitor_reconcile(&st);
-    if (st.monitor_count == 0) {
-        fprintf(stderr, "wayoled: compositor exposed no wl_output\n");
-        return 1;
-    }
+    if (st.monitor_count == 0)
+        fprintf(stderr, "wayoled: no outputs yet, waiting for one to appear\n");
 
     if (backlight_detect(&st.backlight) == 0) {
         st.backlight_available = 1;

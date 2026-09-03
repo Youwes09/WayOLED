@@ -1,0 +1,26 @@
+Source: wayoled
+Section: x11
+Priority: optional
+Maintainer: Youwes09 <yuvi.shen@outlook.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ meson,
+ ninja-build,
+ pkg-config,
+ libwayland-dev,
+ wayland-protocols,
+ libudev-dev
+Standards-Version: 4.7.0
+Homepage: https://github.com/Youwes09/WayOLED
+Rules-Requires-Root: no
+
+Package: wayoled
+Architecture: linux-any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: display protection daemon for wlroots-based Wayland compositors
+ WayOLED reduces OLED burn-in risk and manages output brightness, gamma, and
+ color temperature on wlroots-based Wayland compositors. It provides non-PWM
+ dimming, time-of-day color temperature, a per-channel gamma curve, static
+ content plus idle detection with automatic dimming, an on-demand
+ pixel-refresh sweep, and backlight smoothing. The oledctl client controls a
+ running daemon over a Unix socket.

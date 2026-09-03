@@ -137,7 +137,9 @@ in
 
     systemd.user.services.wayoled = {
       description = "WayOLED display protection daemon";
-      wantedBy = [ "default.target" ];
+      wantedBy = [ "graphical-session.target" ];
+      partOf = [ "graphical-session.target" ];
+      after = [ "graphical-session.target" ];
       unitConfig = {
         StartLimitIntervalSec = 60;
         StartLimitBurst = 5;

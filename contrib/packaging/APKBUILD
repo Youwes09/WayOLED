@@ -1,0 +1,24 @@
+# Maintainer: Youwes09 <yuvi.shen@outlook.com>
+
+pkgname=wayoled
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Display protection daemon for wlroots-based Wayland compositors"
+url="https://github.com/Youwes09/WayOLED"
+arch="all"
+license="MIT"
+makedepends="meson ninja-build wayland-dev wayland-protocols eudev-dev"
+source="$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/WayOLED-$pkgver"
+
+build() {
+	abuild-meson -Dinstall-systemd-unit=false . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+sha512sums="SKIP"
