@@ -10,6 +10,28 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+
+        updpkgsums = pkgs.writeShellApplication {
+          name = "updpkgsums";
+          runtimeInputs = with pkgs; [ curl coreutils gnused bash ];
+          text = ''
+            set -euo pipefail
+            pkgbuild="''${1:-PKGBUILD}"
+            mapfile -t urls < <(bash -c "source '$pkgbuild'; for s in \"\''${source[@]}\"; do echo \"\''${s#*::}\"; done")
+            sums=()
+            for u in "''${urls[@]}"; do
+              case "$u" in
+                http://*|https://*|ftp://*)
+                  sums+=("$(curl -fsSL "$u" | sha256sum | cut -d' ' -f1)") ;;
+                *)
+                  sums+=("SKIP") ;;
+              esac
+            done
+            line="sha256sums=($(printf "'%s' " "''${sums[@]}" | sed 's/ $//'))"
+            sed -i "s|^sha256sums=.*|$line|" "$pkgbuild"
+            grep '^sha256sums=' "$pkgbuild"
+          '';
+        };
       in
       {
         packages.default = pkgs.stdenv.mkDerivation {
@@ -54,6 +76,7 @@
             wayland-scanner
             gdb
             clang-tools
+            updpkgsums
           ];
 
           buildInputs = with pkgs; [

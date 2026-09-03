@@ -11,7 +11,7 @@ depends=('wayland')
 makedepends=('meson' 'wayland-protocols')
 backup=('etc/wayoled/schedule.conf.example')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('97c8fe55dadede9152e57129bf6f633f1554a5c314dac412d7807ede4f9c43b5')
 
 build() {
   arch-meson "WayOLED-$pkgver" build
