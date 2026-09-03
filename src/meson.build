@@ -19,7 +19,6 @@ wayoled_sources = files(
 
 wayoled_deps = [
   wayland_client,
-  libudev,
   libm,
 ]
 

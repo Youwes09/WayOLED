@@ -1,0 +1,33 @@
+# Maintainer: Youwes09 <yuvi.shen@outlook.com>
+
+pkgname=wayoled-git
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc='Display protection daemon for wlroots-based Wayland compositors'
+arch=('x86_64' 'aarch64')
+url='https://github.com/Youwes09/WayOLED'
+license=('MIT')
+depends=('wayland')
+makedepends=('git' 'meson' 'wayland-protocols')
+provides=('wayoled')
+conflicts=('wayoled')
+backup=('etc/wayoled/schedule.conf.example')
+source=("$pkgname::git+https://github.com/Youwes09/WayOLED.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  git describe --long --tags --abbrev=7 2>/dev/null \
+    | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' \
+    || printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+  arch-meson "$pkgname" build
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm644 "$pkgname/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

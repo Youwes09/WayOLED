@@ -17,16 +17,16 @@ jobs:
         include:
           - name: arch
             image: archlinux:latest
-            setup: pacman -Sy --noconfirm --needed gcc clang meson ninja pkgconf wayland wayland-protocols systemd-libs
+            setup: pacman -Sy --noconfirm --needed gcc clang meson ninja pkgconf wayland wayland-protocols
           - name: fedora
             image: fedora:latest
-            setup: dnf -y install gcc clang meson ninja-build pkgconf-pkg-config wayland-devel wayland-protocols-devel systemd-devel
+            setup: dnf -y install gcc clang meson ninja-build pkgconf-pkg-config wayland-devel wayland-protocols-devel
           - name: debian
             image: debian:testing
-            setup: apt-get update && apt-get install -y build-essential clang meson ninja-build pkg-config libwayland-dev wayland-protocols libudev-dev
+            setup: apt-get update && apt-get install -y build-essential clang meson ninja-build pkg-config libwayland-dev wayland-protocols
           - name: alpine
             image: alpine:latest
-            setup: apk add build-base clang meson ninja-build pkgconf wayland-dev wayland-protocols eudev-dev
+            setup: apk add build-base clang meson ninja-build pkgconf wayland-dev wayland-protocols
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies

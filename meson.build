@@ -13,7 +13,6 @@ cc = meson.get_compiler('c')
 wayland_client   = dependency('wayland-client')
 wayland_protos   = dependency('wayland-protocols')
 wayland_scanner  = dependency('wayland-scanner', native: true)
-libudev          = dependency('libudev')
 libm             = cc.find_library('m', required: true)
 
 wayland_scanner_prog = find_program(

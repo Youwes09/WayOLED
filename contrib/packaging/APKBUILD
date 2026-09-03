@@ -7,7 +7,7 @@ pkgdesc="Display protection daemon for wlroots-based Wayland compositors"
 url="https://github.com/Youwes09/WayOLED"
 arch="all"
 license="MIT"
-makedepends="meson ninja-build wayland-dev wayland-protocols eudev-dev"
+makedepends="meson ninja-build wayland-dev wayland-protocols"
 source="$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
 builddir="$srcdir/WayOLED-$pkgver"
 

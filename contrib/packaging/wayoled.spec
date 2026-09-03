@@ -12,7 +12,6 @@ BuildRequires:  meson
 BuildRequires:  pkgconfig(wayland-client)
 BuildRequires:  pkgconfig(wayland-scanner)
 BuildRequires:  wayland-protocols-devel
-BuildRequires:  pkgconfig(libudev)
 BuildRequires:  systemd-rpm-macros
 
 %description

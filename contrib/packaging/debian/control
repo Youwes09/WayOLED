@@ -8,8 +8,7 @@ Build-Depends:
  ninja-build,
  pkg-config,
  libwayland-dev,
- wayland-protocols,
- libudev-dev
+ wayland-protocols
 Standards-Version: 4.7.0
 Homepage: https://github.com/Youwes09/WayOLED
 Rules-Requires-Root: no
