@@ -63,6 +63,23 @@ Build options:
 | `install-setuid-helper` | false | install the brightness helper setuid root |
 | `systemd-user-unit-dir` | auto | override the unit install path |
 
+### Nix
+
+The flake exposes `packages.default` and `nixosModules.default`.
+
+    nix run github:Youwes09/WayOLED
+
+On NixOS, add the flake as an input and import the module:
+
+    {
+      inputs.wayoled.url = "github:Youwes09/WayOLED";
+
+      # in your configuration
+      imports = [ inputs.wayoled.nixosModules.default ];
+      services.wayoled.enable = true;
+      services.wayoled.users = [ "yourname" ];
+    }
+
 ## Backlight access
 
 `wayoled` writes `/sys/class/backlight/<device>/brightness`. Grant write access
