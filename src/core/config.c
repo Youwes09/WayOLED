@@ -37,6 +37,28 @@ static void parse_gamma(wayoled_profile_t *out, const char *value) {
     out->gamma_b = b;
 }
 
+static void parse_mask_area(wayoled_profile_t *out, const char *value) {
+    if (strcmp(value, "full") == 0) {
+        out->mask_area.w = 0;
+        return;
+    }
+
+    int x, y, w, h;
+    if (sscanf(value, "%d:%d:%d:%d", &x, &y, &w, &h) == 4 && w > 0 && h > 0) {
+        out->mask_area.x = x;
+        out->mask_area.y = y;
+        out->mask_area.w = w;
+        out->mask_area.h = h;
+    }
+}
+
+static void parse_dim_mode(wayoled_profile_t *out, const char *value) {
+    if (strcmp(value, "mask") == 0)
+        out->dim_mode = DIM_MODE_MASK;
+    else if (strcmp(value, "gamma") == 0)
+        out->dim_mode = DIM_MODE_GAMMA;
+}
+
 static void parse_profile_file(FILE *f, wayoled_profile_t *out) {
     char line[128];
 
@@ -64,7 +86,18 @@ static void parse_profile_file(FILE *f, wayoled_profile_t *out) {
             out->night_temp = atoi(value);
         else if (strcmp(key, "gamma") == 0)
             parse_gamma(out, value);
-        else if (strcmp(key, "monitor") == 0)
+        else if (strcmp(key, "dim_mode") == 0)
+            parse_dim_mode(out, value);
+        else if (strcmp(key, "mask_density") == 0) {
+            double d = atof(value);
+            if (d < 0.0) d = 0.0;
+            if (d > 1.0) d = 1.0;
+            out->mask_density = d;
+        } else if (strcmp(key, "mask_area") == 0) {
+            parse_mask_area(out, value);
+        } else if (strcmp(key, "mask_shift_interval_s") == 0) {
+            out->mask_shift_interval_s = atoi(value);
+        } else if (strcmp(key, "monitor") == 0)
             parse_monitor_list(out, value);
     }
 }
@@ -82,6 +115,9 @@ void config_default_profile(wayoled_profile_t *out) {
     out->gamma_r = 1.0;
     out->gamma_g = 1.0;
     out->gamma_b = 1.0;
+    out->dim_mode = DIM_MODE_GAMMA;
+    out->mask_density = 0.5;
+    out->mask_shift_interval_s = 3600;
 }
 
 int config_load_profile(const char *name, wayoled_profile_t *out) {

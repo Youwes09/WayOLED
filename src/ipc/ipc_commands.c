@@ -75,10 +75,11 @@ static void cmd_status(wayoled_state_t *st, const char *args, const char *monito
             snprintf(temp_field, sizeof(temp_field), "off");
 
         w = snprintf(resp + off, max - off,
-            "%s: dimmed=%d manual=%d static_count=%d profile=%s pinned=%d refresh=%d colortemp=%s gamma=%.2f:%.2f:%.2f\n",
+            "%s: dimmed=%d manual=%d static_count=%d profile=%s pinned=%d refresh=%d colortemp=%s gamma=%.2f:%.2f:%.2f mode=%s\n",
             m->name, m->dimmed, m->manual_override, m->static_count,
             m->profile[0] ? m->profile : "default", m->profile_pinned, m->refresh_in_progress, temp_field,
-            m->gamma_r, m->gamma_g, m->gamma_b);
+            m->gamma_r, m->gamma_g, m->gamma_b,
+            m->dim_mode == DIM_MODE_MASK ? "mask" : "gamma");
         if (w < 0 || (size_t)w >= max - off)
             break;
         off += (size_t)w;
@@ -95,15 +96,15 @@ static void cmd_dim(wayoled_state_t *st, const char *args, const char *monitor, 
     int ok = 0;
     for (int i = 0; i < n; i++) {
         wayoled_monitor_t *m = targets[i];
-        if (!m->dimmer.available)
+        if (!monitor_can_dim(st, m))
             continue;
-        dimmer_fade_start(&m->dimmer, m->dim_factor, DIMMER_FADE_MS);
+        monitor_dim(st, m);
         m->dimmed = 1;
         m->manual_override = 1;
         ok++;
     }
 
-    snprintf(resp, max, ok ? "ok\n" : "err no gamma control\n");
+    snprintf(resp, max, ok ? "ok\n" : "err dimming unavailable\n");
 }
 
 static void cmd_restore(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {
@@ -116,16 +117,16 @@ static void cmd_restore(wayoled_state_t *st, const char *args, const char *monit
     int ok = 0;
     for (int i = 0; i < n; i++) {
         wayoled_monitor_t *m = targets[i];
-        if (!m->dimmer.available)
+        if (!monitor_can_dim(st, m))
             continue;
-        dimmer_fade_start(&m->dimmer, 1.0, DIMMER_FADE_MS);
+        monitor_undim(st, m);
         m->dimmed = 0;
         m->manual_override = 0;
         m->static_count = 0;
         ok++;
     }
 
-    snprintf(resp, max, ok ? "ok\n" : "err no gamma control\n");
+    snprintf(resp, max, ok ? "ok\n" : "err dimming unavailable\n");
 }
 
 static void cmd_pause(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {
@@ -391,7 +392,7 @@ static const char *const HELP_TEXT =
     "usage: oledctl <command> [args] [--monitor NAME]\n"
     "\n"
     "status                      show daemon state\n"
-    "dim | restore               force gamma dimming on/off\n"
+    "dim | restore               force dimming on/off (gamma or mask, per profile)\n"
     "pause | resume              suspend/resume automatic dimming\n"
     "brightness get|set|step     report or adjust backlight percentage\n"
     "refresh [stop]              run or cancel the pixel-refresh sweep\n"
@@ -463,8 +464,9 @@ static void cmd_gamma(wayoled_state_t *st, const char *args, const char *monitor
 static void cmd_capabilities(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {
     (void)args; (void)monitor;
     snprintf(resp, max,
-        "static_content=%d gamma=%d pixel_refresh=%d backlight=%d idle=1\n",
-        st->cap_static_content, st->cap_gamma, st->cap_pixel_refresh, st->backlight_available);
+        "static_content=%d gamma=%d pixel_refresh=%d mask_dim=%d backlight=%d idle=1\n",
+        st->cap_static_content, st->cap_gamma, st->cap_pixel_refresh, st->cap_mask_dim,
+        st->backlight_available);
 }
 
 static void cmd_help(wayoled_state_t *st, const char *args, const char *monitor, char *resp, size_t max) {

@@ -111,10 +111,24 @@ static void check_static_content(wayoled_state_t *st, wayoled_monitor_t *mon) {
 
     if (!mon->manual_override && !st->paused && mon->risk_monitor_enabled) {
         int risk = (mon->static_count >= mon->static_threshold_polls) && st->idle.is_idle;
-        if (risk && !mon->dimmed && mon->dimmer.available) {
+        if (risk && !mon->dimmed && monitor_can_dim(st, mon)) {
             fprintf(stderr, "wayoled: %s static content + idle detected, dimming\n", mon->name);
-            dimmer_fade_start(&mon->dimmer, mon->dim_factor, DIMMER_FADE_MS);
+            monitor_dim(st, mon);
             mon->dimmed = 1;
+        }
+    }
+}
+
+static void mask_shift_tick(wayoled_state_t *st) {
+    for (int i = 0; i < st->monitor_count; i++) {
+        wayoled_monitor_t *mon = &st->monitors[i];
+        if (!mon->mask.active || mon->mask_shift_interval_s <= 0)
+            continue;
+
+        mon->mask_shift_elapsed_ms += TICK_MS;
+        if (mon->mask_shift_elapsed_ms >= (long)mon->mask_shift_interval_s * 1000) {
+            mon->mask_shift_elapsed_ms = 0;
+            mask_shift(&mon->mask);
         }
     }
 }
@@ -182,16 +196,18 @@ static void on_tick(wayoled_state_t *st, int *ms_since_static, int *ms_since_sch
     if (*was_idle && !st->idle.is_idle) {
         for (int i = 0; i < st->monitor_count; i++) {
             wayoled_monitor_t *mon = &st->monitors[i];
-            if (!mon->dimmed || !mon->dimmer.available)
+            if (!mon->dimmed)
                 continue;
             fprintf(stderr, "wayoled: activity detected, restoring %s\n", mon->name);
-            dimmer_fade_start(&mon->dimmer, 1.0, DIMMER_FADE_MS);
+            monitor_undim(st, mon);
             mon->dimmed = 0;
             mon->manual_override = 0;
             mon->static_count = 0;
         }
     }
     *was_idle = st->idle.is_idle;
+
+    mask_shift_tick(st);
 
     *ms_since_static += TICK_MS;
     if (*ms_since_static >= STATIC_CHECK_INTERVAL_MS) {
@@ -243,9 +259,12 @@ int main(int argc, char *argv[]) {
 
     st.seat = g.seat;
     st.shm = g.shm;
+    st.compositor = g.compositor;
     st.screencopy_manager = g.screencopy_manager;
     st.gamma_manager = g.gamma_manager;
+    st.layer_shell = g.layer_shell;
     st.cap_pixel_refresh = g.layer_shell != NULL;
+    st.cap_mask_dim = (g.compositor && g.layer_shell && g.shm) ? 1 : 0;
 
     if (!g.seat || !g.idle_notifier) {
         fprintf(stderr, "wayoled: compositor missing wl_seat or ext_idle_notifier_v1\n");
@@ -290,6 +309,9 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "  pixel-refresh sweep      : %s\n",
         st.cap_pixel_refresh ? "on (wlr-layer-shell-v1)"
                              : "off (wlr-layer-shell-v1 unavailable)");
+    fprintf(stderr, "  mask (checkerboard) dim  : %s\n",
+        st.cap_mask_dim ? "on (wlr-layer-shell-v1)"
+                        : "off (wlr-layer-shell-v1 unavailable)");
     fprintf(stderr, "  backlight control        : %s\n",
         st.backlight_available ? st.backlight.brightness_path
                                : "off (no /sys/class/backlight device)");
@@ -367,6 +389,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < st.monitor_count; i++) {
         wayoled_monitor_t *mon = &st.monitors[i];
         free(mon->last_hashes);
+        mask_disengage(&mon->mask);
         dimmer_destroy(&mon->dimmer);
         if (mon->screencopy_available)
             screencopy_destroy(&mon->screencopy);

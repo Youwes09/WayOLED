@@ -1,4 +1,5 @@
 #include "monitor.h"
+#include "config.h"
 #include "profile.h"
 #include "../colortemp/colortemp.h"
 
@@ -158,6 +159,7 @@ static void monitor_teardown(wayoled_monitor_t *mon) {
         kill(mon->refresh_pid, SIGTERM);
         waitpid(mon->refresh_pid, NULL, 0);
     }
+    mask_disengage(&mon->mask);
     dimmer_destroy(&mon->dimmer);
     if (mon->screencopy_available)
         screencopy_destroy(&mon->screencopy);
@@ -197,10 +199,49 @@ void monitor_reconcile(wayoled_state_t *st) {
                     wl_proxy_set_user_data((struct wl_proxy *)m->dimmer.control, &m->dimmer);
                 if (m->output)
                     wl_proxy_set_user_data((struct wl_proxy *)m->output, m);
+                if (m->mask.active && m->mask.overlay.layer_surface)
+                    wl_proxy_set_user_data((struct wl_proxy *)m->mask.overlay.layer_surface, &m->mask.overlay);
             }
         }
 
         st->monitor_count--;
         memset(&st->monitors[st->monitor_count], 0, sizeof(wayoled_monitor_t));
     }
+}
+
+static int mask_dim_available(wayoled_state_t *st) {
+    return st->compositor && st->layer_shell && st->shm;
+}
+
+int monitor_can_dim(wayoled_state_t *st, wayoled_monitor_t *mon) {
+    if (mon->dim_mode == DIM_MODE_MASK)
+        return mask_dim_available(st);
+    return mon->dimmer.available;
+}
+
+void monitor_dim(wayoled_state_t *st, wayoled_monitor_t *mon) {
+    if (mon->dim_mode == DIM_MODE_MASK) {
+        if (mask_dim_available(st) && !mon->mask.active) {
+            const wayoled_rect_t *rect = mon->mask_area.w > 0 ? &mon->mask_area : NULL;
+            if (mask_engage(&mon->mask, st->display, st->compositor, st->layer_shell, st->shm,
+                            mon->output, mon->mask_density, rect) == 0)
+                mon->mask_shift_elapsed_ms = 0;
+        }
+        return;
+    }
+
+    if (mon->dimmer.available)
+        dimmer_fade_start(&mon->dimmer, mon->dim_factor, DIMMER_FADE_MS);
+}
+
+void monitor_undim(wayoled_state_t *st, wayoled_monitor_t *mon) {
+    (void)st;
+
+    if (mon->dim_mode == DIM_MODE_MASK) {
+        mask_disengage(&mon->mask);
+        return;
+    }
+
+    if (mon->dimmer.available)
+        dimmer_fade_start(&mon->dimmer, 1.0, DIMMER_FADE_MS);
 }

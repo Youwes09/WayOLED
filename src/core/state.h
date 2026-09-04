@@ -9,6 +9,7 @@
 #include "../backlight/inotify_watch.h"
 #include "../wayland/idle_notify.h"
 #include "../wayland/screencopy.h"
+#include "../wayland/mask_overlay.h"
 #include "dimmer.h"
 #include "scheduler.h"
 #include "wayland_globals.h"
@@ -37,6 +38,12 @@ typedef struct {
     double gamma_r;
     double gamma_g;
     double gamma_b;
+    int dim_mode;
+    double mask_density;
+    wayoled_rect_t mask_area;
+    int mask_shift_interval_s;
+    long mask_shift_elapsed_ms;
+    mask_overlay_t mask;
     long min_safe_brightness;
     int static_threshold_polls;
     int risk_monitor_enabled;
@@ -57,8 +64,10 @@ typedef struct {
     struct wl_display *display;
     struct wl_seat *seat;
     struct wl_shm *shm;
+    struct wl_compositor *compositor;
     struct zwlr_screencopy_manager_v1 *screencopy_manager;
     struct zwlr_gamma_control_manager_v1 *gamma_manager;
+    struct zwlr_layer_shell_v1 *layer_shell;
 
     backlight_dev_t backlight;
     backlight_watcher_t bl_watcher;
@@ -72,6 +81,7 @@ typedef struct {
     int cap_static_content;
     int cap_gamma;
     int cap_pixel_refresh;
+    int cap_mask_dim;
 
     wayoled_monitor_t monitors[WAYOLED_MAX_MONITORS];
     int monitor_count;

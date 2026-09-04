@@ -13,6 +13,7 @@
 typedef struct {
     struct wl_seat *seat;
     struct wl_shm *shm;
+    struct wl_compositor *compositor;
     struct ext_idle_notifier_v1 *idle_notifier;
     struct zwlr_screencopy_manager_v1 *screencopy_manager;
     struct zwlr_gamma_control_manager_v1 *gamma_manager;

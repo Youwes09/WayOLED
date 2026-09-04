@@ -5,6 +5,10 @@
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
 typedef struct {
+    int x, y, w, h;
+} wayoled_rect_t;
+
+typedef struct {
     struct wl_surface *surface;
     struct zwlr_layer_surface_v1 *layer_surface;
 
@@ -15,7 +19,7 @@ typedef struct {
 
 int overlay_create(struct wl_display *display, struct wl_compositor *compositor,
                     struct zwlr_layer_shell_v1 *layer_shell, struct wl_output *output,
-                    const char *namespace, overlay_t *ov);
+                    const char *namespace, const wayoled_rect_t *rect, overlay_t *ov);
 
 void overlay_destroy(overlay_t *ov);
 

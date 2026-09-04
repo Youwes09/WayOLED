@@ -12,6 +12,7 @@ wayoled_sources = files(
   'wayland/idle_notify.c',
   'wayland/screencopy.c',
   'wayland/layer_shell_overlay.c',
+  'wayland/mask_overlay.c',
   'wayland/refresh_cycle.c',
   'ipc/ipc_server.c',
   'ipc/ipc_commands.c',

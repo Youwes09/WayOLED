@@ -5,7 +5,7 @@ burn-in risk and manages output brightness, gamma, and color temperature.
 
 ## Features
 
-- Non-PWM dimming through the gamma ramp
+- Non-PWM dimming through the gamma ramp, or an ordered-dither pixel mask
 - Time-of-day color temperature
 - Per-channel gamma curve
 - Static-content plus idle detection, with automatic dimming
@@ -120,7 +120,29 @@ output at startup.
 | `colortemp_enabled` | 1 to apply time-of-day color temperature |
 | `day_temp`, `night_temp` | Kelvin for day and night |
 | `gamma` | `V` or `R:G:B`, per-channel gamma, 0.1 to 10.0 |
+| `dim_mode` | `gamma` (default) or `mask` |
+| `mask_density` | fraction of pixels turned off in mask mode, 0.0 to 1.0 |
+| `mask_area` | `x:y:w:h` in output-local pixels, or `full` (default) |
+| `mask_shift_interval_s` | seconds between phase shifts of the mask, 0 disables, default 3600 |
 | `monitor` | comma-separated output names, or `all` |
+
+`dim_mode=mask` dims by covering an ordered-dither fraction of pixels with an
+opaque overlay instead of scaling the gamma ramp. Those pixels go fully off on
+an OLED panel rather than merely darker, and it works without
+`wlr-gamma-control`, needing only `wlr-layer-shell-v1`. It trades a visible
+dither pattern for that independence, so `gamma` is still the default.
+
+`mask_area` restricts the mask to part of one output, such as a bar, instead
+of the whole screen. `mask_shift_interval_s` periodically rotates which
+pixels in the pattern are off, so a masked static region does not stress the
+same subpixels forever.
+
+`oledctl mask-region` runs `slurp` to drag-select a rectangle and prints the
+`monitor=` and `mask_area=` lines for the profile. `oledctl mask-region
+--write NAME` writes those two lines into
+`~/.config/wayoled/profiles/NAME.conf` instead, creating the file or
+directory if needed and replacing only those two lines if the file already
+exists. Neither form requires a running daemon.
 
 Color temperature holds `night_temp` from 21:00 to 06:00, `day_temp` from 08:00
 to 19:00, and interpolates across 06:00 to 08:00 and 19:00 to 21:00.
@@ -142,7 +164,7 @@ pins an output to a profile; `oledctl auto` unpins it.
 | Command | Action |
 | --- | --- |
 | `status` | daemon and per-output state |
-| `dim`, `restore` | force gamma dimming on or off |
+| `dim`, `restore` | force dimming on or off, gamma or mask per profile |
 | `pause`, `resume` | suspend or resume automatic dimming |
 | `brightness get\|set <pct>\|step <+-pct>` | backlight |
 | `refresh [stop]` | run or cancel the pixel-refresh sweep |
@@ -153,9 +175,11 @@ pins an output to a profile; `oledctl auto` unpins it.
 | `gamma get\|<v>\|<r:g:b>\|reset` | per-channel gamma curve |
 | `monitors` | detected output names |
 | `capabilities` | features the compositor supports |
+| `mask-region [--write NAME]` | drag-select with `slurp`, print or write profile lines |
 
 `--monitor NAME` targets one output. Without it, a command applies to all
-outputs, or to the single output when there is only one.
+outputs, or to the single output when there is only one. `mask-region` is a
+client-side helper and ignores `--monitor`; it works without a running daemon.
 
 ## Packaging
 

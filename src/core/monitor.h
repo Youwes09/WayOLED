@@ -15,4 +15,8 @@ void monitor_add(wayoled_state_t *st, struct wl_output *output,
 void monitor_mark_removed(wayoled_state_t *st, uint32_t registry_name);
 void monitor_reconcile(wayoled_state_t *st);
 
+int monitor_can_dim(wayoled_state_t *st, wayoled_monitor_t *mon);
+void monitor_dim(wayoled_state_t *st, wayoled_monitor_t *mon);
+void monitor_undim(wayoled_state_t *st, wayoled_monitor_t *mon);
+
 #endif

@@ -22,6 +22,10 @@ int profile_apply(wayoled_monitor_t *mon, const char *name) {
     mon->gamma_r = prof.gamma_r;
     mon->gamma_g = prof.gamma_g;
     mon->gamma_b = prof.gamma_b;
+    mon->dim_mode = prof.dim_mode;
+    mon->mask_density = prof.mask_density;
+    mon->mask_area = prof.mask_area;
+    mon->mask_shift_interval_s = prof.mask_shift_interval_s;
     strncpy(mon->profile, prof.name, sizeof(mon->profile) - 1);
     mon->profile[sizeof(mon->profile) - 1] = '\0';
 

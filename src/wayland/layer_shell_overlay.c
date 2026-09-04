@@ -27,7 +27,7 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 
 int overlay_create(struct wl_display *display, struct wl_compositor *compositor,
                     struct zwlr_layer_shell_v1 *layer_shell, struct wl_output *output,
-                    const char *namespace, overlay_t *ov) {
+                    const char *namespace, const wayoled_rect_t *rect, overlay_t *ov) {
     memset(ov, 0, sizeof(*ov));
 
     ov->surface = wl_compositor_create_surface(compositor);
@@ -36,9 +36,16 @@ int overlay_create(struct wl_display *display, struct wl_compositor *compositor,
 
     zwlr_layer_surface_v1_add_listener(ov->layer_surface, &layer_surface_listener, ov);
 
-    zwlr_layer_surface_v1_set_anchor(ov->layer_surface,
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    if (rect && rect->w > 0 && rect->h > 0) {
+        zwlr_layer_surface_v1_set_anchor(ov->layer_surface,
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
+        zwlr_layer_surface_v1_set_size(ov->layer_surface, (uint32_t)rect->w, (uint32_t)rect->h);
+        zwlr_layer_surface_v1_set_margin(ov->layer_surface, rect->y, 0, 0, rect->x);
+    } else {
+        zwlr_layer_surface_v1_set_anchor(ov->layer_surface,
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    }
     zwlr_layer_surface_v1_set_exclusive_zone(ov->layer_surface, -1);
     zwlr_layer_surface_v1_set_keyboard_interactivity(ov->layer_surface, 0);
 

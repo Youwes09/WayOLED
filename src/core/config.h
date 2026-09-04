@@ -2,11 +2,15 @@
 #define WAYOLED_CONFIG_H
 
 #include "wayland_globals.h"
+#include "../wayland/layer_shell_overlay.h"
 
 #define CONFIG_PROFILE_NAME_MAX 32
 #define CONFIG_DIR "/etc/wayoled/profiles"
 #define CONFIG_USER_DIR_SUFFIX "/.config/wayoled/profiles"
 #define CONFIG_MONITOR_LIST_MAX WAYOLED_MAX_MONITORS
+
+#define DIM_MODE_GAMMA 0
+#define DIM_MODE_MASK 1
 
 typedef struct {
     char name[CONFIG_PROFILE_NAME_MAX];
@@ -20,6 +24,10 @@ typedef struct {
     double gamma_r;
     double gamma_g;
     double gamma_b;
+    int dim_mode;
+    double mask_density;
+    wayoled_rect_t mask_area;
+    int mask_shift_interval_s;
     char monitors[CONFIG_MONITOR_LIST_MAX][WAYOLED_MONITOR_NAME_MAX];
     int monitor_count;
 } wayoled_profile_t;

@@ -251,7 +251,7 @@ int refresh_cycle_run(const char *monitor_name) {
         }
     }
 
-    if (overlay_create(st.display, st.compositor, st.layer_shell, target, "wayoled-refresh", &st.overlay) != 0) {
+    if (overlay_create(st.display, st.compositor, st.layer_shell, target, "wayoled-refresh", NULL, &st.overlay) != 0) {
         wl_display_disconnect(st.display);
         return -1;
     }

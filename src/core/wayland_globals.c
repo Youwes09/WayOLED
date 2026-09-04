@@ -13,6 +13,8 @@ static void registry_global(void *data, struct wl_registry *registry,
         g->idle_notifier = wl_registry_bind(registry, name, &ext_idle_notifier_v1_interface, 1);
     } else if (strcmp(interface, wl_shm_interface.name) == 0) {
         g->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+    } else if (strcmp(interface, wl_compositor_interface.name) == 0) {
+        g->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
     } else if (strcmp(interface, zwlr_screencopy_manager_v1_interface.name) == 0) {
         g->screencopy_manager = wl_registry_bind(registry, name, &zwlr_screencopy_manager_v1_interface, 1);
     } else if (strcmp(interface, zwlr_gamma_control_manager_v1_interface.name) == 0) {
