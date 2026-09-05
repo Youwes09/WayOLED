@@ -10,6 +10,7 @@ typedef struct {
     struct zwlr_screencopy_manager_v1 *manager;
     struct wl_output *output;
 
+    struct wl_buffer *buffer;
     void *pixels;
     int fd;
     size_t size;

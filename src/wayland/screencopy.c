@@ -53,12 +53,17 @@ static void buffer_event(void *data, struct zwlr_screencopy_frame_v1 *frame,
         return;
     }
 
+    if (sc->buffer) {
+        wl_buffer_destroy(sc->buffer);
+        sc->buffer = NULL;
+    }
+
     struct wl_shm_pool *pool = wl_shm_create_pool(sc->shm, sc->fd, (int32_t)sc->size);
-    struct wl_buffer *buffer = wl_shm_pool_create_buffer(
+    sc->buffer = wl_shm_pool_create_buffer(
         pool, 0, sc->width, sc->height, sc->stride, format);
     wl_shm_pool_destroy(pool);
 
-    zwlr_screencopy_frame_v1_copy(frame, buffer);
+    zwlr_screencopy_frame_v1_copy(frame, sc->buffer);
 }
 
 static void flags_event(void *data, struct zwlr_screencopy_frame_v1 *frame,
@@ -97,11 +102,20 @@ int screencopy_capture(screencopy_t *sc, struct wl_display *display) {
     while (!sc->done && !sc->failed) {
         if (wl_display_dispatch(display) < 0) {
             zwlr_screencopy_frame_v1_destroy(frame);
+            if (sc->buffer) {
+                wl_buffer_destroy(sc->buffer);
+                sc->buffer = NULL;
+            }
             return -1;
         }
     }
 
     zwlr_screencopy_frame_v1_destroy(frame);
+
+    if (sc->buffer) {
+        wl_buffer_destroy(sc->buffer);
+        sc->buffer = NULL;
+    }
 
     if (sc->failed || sc->fd < 0 || sc->size == 0)
         return -1;
@@ -110,6 +124,8 @@ int screencopy_capture(screencopy_t *sc, struct wl_display *display) {
 }
 
 void screencopy_destroy(screencopy_t *sc) {
+    if (sc->buffer)
+        wl_buffer_destroy(sc->buffer);
     if (sc->pixels && sc->pixels != MAP_FAILED)
         munmap(sc->pixels, sc->size);
     if (sc->fd >= 0)
