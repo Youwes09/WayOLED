@@ -1,7 +1,7 @@
 # Maintainer: Youwes09 <yuvi.shen@outlook.com>
 
 pkgname=wayoled
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=0
 pkgdesc="Display protection daemon for wlroots-based Wayland compositors"
 url="https://github.com/Youwes09/WayOLED"

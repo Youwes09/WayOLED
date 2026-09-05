@@ -1,7 +1,7 @@
 # Maintainer: Youwes09 <yuvi.shen@outlook.com>
 
 pkgname=wayoled
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Display protection daemon for wlroots-based Wayland compositors'
 arch=('x86_64' 'aarch64')
@@ -11,7 +11,7 @@ depends=('wayland')
 makedepends=('meson' 'wayland-protocols')
 backup=('etc/wayoled/schedule.conf.example')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('97c8fe55dadede9152e57129bf6f633f1554a5c314dac412d7807ede4f9c43b5')
+sha256sums=('SKIP')
 
 build() {
   arch-meson "WayOLED-$pkgver" build

@@ -1,5 +1,5 @@
 Name:           wayoled
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Display protection daemon for wlroots-based Wayland compositors
 
@@ -48,5 +48,10 @@ over a Unix socket.
 %config(noreplace) %{_sysconfdir}/wayoled/schedule.conf.example
 
 %changelog
+* Fri Sep 05 2026 Youwes09 <yuvi.shen@outlook.com> - 0.2.0-1
+- Mask-overlay dimming as a gamma-independent alternative.
+- Output hotplug and runtime compositor capability gating.
+- Fix wl_buffer proxy leak in the screencopy capture path.
+
 * Tue Sep 02 2026 Youwes09 <yuvi.shen@outlook.com> - 0.1.0-1
 - Initial package.

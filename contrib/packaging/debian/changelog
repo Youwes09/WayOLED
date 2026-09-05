@@ -1,3 +1,11 @@
+wayoled (0.2.0-1) unstable; urgency=medium
+
+  * Mask-overlay dimming as a gamma-independent alternative.
+  * Output hotplug and runtime compositor capability gating.
+  * Fix wl_buffer proxy leak in the screencopy capture path.
+
+ -- Youwes09 <yuvi.shen@outlook.com>  Fri, 05 Sep 2026 12:00:00 -0500
+
 wayoled (0.1.0-1) unstable; urgency=medium
 
   * Initial package.
